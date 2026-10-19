@@ -1,0 +1,21 @@
+import {chromium} from 'playwright';
+import {mkdir} from 'node:fs/promises';
+await mkdir('test-results',{recursive:true});
+const browser=await chromium.launch({headless:true});
+const page=await browser.newPage({viewport:{width:390,height:844},deviceScaleFactor:1});
+page.on('pageerror',e=>console.log('ERROR',e.message));
+await page.goto('http://127.0.0.1:4173');
+await page.screenshot({path:'test-results/onboarding.png',fullPage:true});
+await page.getByLabel('Как вас зовут?').fill('Аня');
+await page.getByRole('button',{name:'Создать нашу комнату'}).click();
+await page.getByRole('button',{name:'Идеи',exact:true}).click();
+await page.evaluate(()=>document.fonts.ready);
+await page.waitForFunction(()=>!document.querySelector('#toast').classList.contains('visible'));
+await page.waitForFunction(()=>getComputedStyle(document.querySelector('#toast')).opacity==='0');
+await page.locator('h1').click();
+await page.screenshot({path:'test-results/ideas.png',fullPage:false});
+const iconPage=await browser.newPage();
+await iconPage.goto('http://127.0.0.1:4173/assets/icon.svg');
+for(const size of [192,512]){await iconPage.setViewportSize({width:size,height:size});await iconPage.screenshot({path:`assets/icon-${size}.png`,omitBackground:true});}
+console.log('Preview screenshots complete');
+await browser.close();
