@@ -1,3 +1,33 @@
-export function surprise(ideas,{location='Дома',minutes=120}={}){const pool=ideas.filter(i=>(i.location===location||i.location==='Где угодно')&&i.duration<=minutes/2);const picked=[],used=new Set();let total=0;for(const idea of shuffle(pool)){if(picked.length>=3)break;if(used.has(idea.category)||total+idea.duration>minutes)continue;picked.push(idea.id);used.add(idea.category);total+=idea.duration;}return picked;}
-export function shuffle(list){const copy=[...list];for(let i=copy.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[copy[i],copy[j]]=[copy[j],copy[i]];}return copy;}
-export function reorder(items,from,to){const result=[...items];if(from<0||to<0||from>=items.length||to>=items.length)return result;result.splice(to,0,result.splice(from,1)[0]);return result;}
+export function surprise(ideas, { location = "Дома", minutes = 120 } = {}) {
+  const pool = ideas.filter(
+    (i) =>
+      (i.location === location || i.location === "Где угодно") &&
+      i.duration <= minutes / 2,
+  );
+  const picked = [],
+    used = new Set();
+  let total = 0;
+  for (const idea of shuffle(pool)) {
+    if (picked.length >= 3) break;
+    if (used.has(idea.category) || total + idea.duration > minutes) continue;
+    picked.push(idea.id);
+    used.add(idea.category);
+    total += idea.duration;
+  }
+  return picked;
+}
+export function shuffle(list) {
+  const copy = [...list];
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
+export function reorder(items, from, to) {
+  const result = [...items];
+  if (from < 0 || to < 0 || from >= items.length || to >= items.length)
+    return result;
+  result.splice(to, 0, result.splice(from, 1)[0]);
+  return result;
+}

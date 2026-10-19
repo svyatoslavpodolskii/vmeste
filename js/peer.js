@@ -1,11 +1,197 @@
-import {Sync} from './sync.js';
+import { Sync } from "./sync.js";
 export class RoomPeer {
- constructor(store,onStatus){this.store=store;this.status=onStatus;this.stopped=false;this.sync=new Sync(store,m=>this.send(m),onStatus);this.change=e=>{if(e.detail.local)this.sync.changed(e.detail.entries);};store.addEventListener('change',this.change);this.resume=()=>{if(!this.stopped&&!this.connection?.open&&document.visibilityState!=='hidden')this.restart();};this.offline=()=>{this.status('Офлайн');this.connection?.close();};window.addEventListener('online',this.resume);window.addEventListener('offline',this.offline);document.addEventListener('visibilitychange',this.resume);this.start();}
- async start(){const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(this.store.roomId));this.prefix='vmeste-'+Array.from(new Uint8Array(digest)).map(x=>x.toString(16).padStart(2,'0')).join('').slice(0,40);if(this.stopped)return;this.claim('a');this.timer=setInterval(()=>{if(!navigator.onLine){this.status('Офлайн');return;}if(this.connection?.open&&Date.now()-this.lastSeen>25000){this.connection.close();this.connection=null;this.connecting=false;}if(!this.peer||this.peer.destroyed){this.claim('a');return;}if(this.peer.disconnected){try{this.peer.reconnect();}catch{this.restart();}}else if(this.slot==='b'&&!this.connection?.open&&this.peer.open&&!this.connecting)this.connect();if(this.connection?.open)this.sync.hello();},8000);}
- claim(slot){if(this.stopped)return;if(!navigator.onLine){this.status('Офлайн');return;}if(!window.Peer){this.status('Соединение пока недоступно');return;}this.slot=slot;this.status('Ждём второго');const peer=this.peer=new window.Peer(`${this.prefix}-${slot}`,{debug:0});peer.on('open',()=>{if(peer!==this.peer)return;if(slot==='b')this.connect();});peer.on('connection',c=>{if(c.peer!==`${this.prefix}-${slot==='a'?'b':'a'}`||this.connection?.open){c.close();return;}this.bind(c);});peer.on('disconnected',()=>this.status(navigator.onLine?'Восстанавливаем связь…':'Офлайн'));peer.on('error',err=>{if(peer!==this.peer||this.stopped)return;if(err.type==='unavailable-id'){peer.destroy();if(slot==='a')this.claim('b');else{this.status('Комната уже открыта на двух устройствах');clearTimeout(this.retry);this.retry=setTimeout(()=>this.restart(),12000);}}else if(err.type==='peer-unavailable'){this.connecting=false;this.status('Ждём второго');}else{this.status('Не удаётся связаться. Данные сохранены');if(!this.connection?.open){clearTimeout(this.retry);this.retry=setTimeout(()=>this.restart(),10000);}}});}
- connect(){if(this.connecting||this.connection?.open)return;this.connecting=true;this.bind(this.peer.connect(`${this.prefix}-a`,{reliable:true,serialization:'json'}));}
- bind(c){this.connection=c;const timeout=setTimeout(()=>{if(!c.open){c.close();this.connecting=false;}},7000);c.on('open',()=>{clearTimeout(timeout);this.connecting=false;this.lastSeen=Date.now();this.status('Вы вдвоём');this.sync.hello();});c.on('data',m=>{this.lastSeen=Date.now();this.sync.receive(m);});c.on('close',()=>{clearTimeout(timeout);this.connecting=false;if(this.connection===c){this.connection=null;this.status(navigator.onLine?'Ждём второго':'Офлайн');}});c.on('error',()=>{clearTimeout(timeout);this.connecting=false;c.close();});}
- send(msg){if(this.connection?.open)try{this.connection.send(msg);}catch{this.status('Восстанавливаем связь…');}}
- restart(){if(this.stopped||!this.prefix)return;clearTimeout(this.retry);this.connection?.close();this.peer?.destroy();this.connection=null;this.connecting=false;this.claim('a');}
- stop(){this.stopped=true;clearInterval(this.timer);clearTimeout(this.retry);this.connection?.close();this.peer?.destroy();this.store.removeEventListener('change',this.change);window.removeEventListener('online',this.resume);window.removeEventListener('offline',this.offline);document.removeEventListener('visibilitychange',this.resume);}
+  constructor(store, onStatus) {
+    this.store = store;
+    this.status = onStatus;
+    this.stopped = false;
+    this.sync = new Sync(store, (m) => this.send(m), onStatus);
+    this.change = (e) => {
+      if (e.detail.local) this.sync.changed(e.detail.entries);
+    };
+    store.addEventListener("change", this.change);
+    this.resume = () => {
+      if (
+        !this.stopped &&
+        !this.connection?.open &&
+        document.visibilityState !== "hidden"
+      )
+        this.restart();
+    };
+    this.offline = () => {
+      this.status("Офлайн");
+      this.connection?.close();
+    };
+    window.addEventListener("online", this.resume);
+    window.addEventListener("offline", this.offline);
+    document.addEventListener("visibilitychange", this.resume);
+    this.start();
+  }
+  async start() {
+    const digest = await crypto.subtle.digest(
+      "SHA-256",
+      new TextEncoder().encode(this.store.roomId),
+    );
+    this.prefix =
+      "vmeste-" +
+      Array.from(new Uint8Array(digest))
+        .map((x) => x.toString(16).padStart(2, "0"))
+        .join("")
+        .slice(0, 40);
+    if (this.stopped) return;
+    this.claim("a");
+    this.timer = setInterval(() => {
+      if (!navigator.onLine) {
+        this.status("Офлайн");
+        return;
+      }
+      if (this.connection?.open && Date.now() - this.lastSeen > 25000) {
+        this.connection.close();
+        this.connection = null;
+        this.connecting = false;
+      }
+      if (!this.peer || this.peer.destroyed) {
+        this.claim("a");
+        return;
+      }
+      if (this.peer.disconnected) {
+        try {
+          this.peer.reconnect();
+        } catch {
+          this.restart();
+        }
+      } else if (
+        this.slot === "b" &&
+        !this.connection?.open &&
+        this.peer.open &&
+        !this.connecting
+      )
+        this.connect();
+      if (this.connection?.open) this.sync.hello();
+    }, 8000);
+  }
+  claim(slot) {
+    if (this.stopped) return;
+    if (!navigator.onLine) {
+      this.status("Офлайн");
+      return;
+    }
+    if (!window.Peer) {
+      this.status("Соединение пока недоступно");
+      return;
+    }
+    this.slot = slot;
+    this.status("Ждём второго");
+    const peer = (this.peer = new window.Peer(`${this.prefix}-${slot}`, {
+      debug: 0,
+    }));
+    peer.on("open", () => {
+      if (peer !== this.peer) return;
+      if (slot === "b") this.connect();
+    });
+    peer.on("connection", (c) => {
+      if (
+        c.peer !== `${this.prefix}-${slot === "a" ? "b" : "a"}` ||
+        this.connection?.open
+      ) {
+        c.close();
+        return;
+      }
+      this.bind(c);
+    });
+    peer.on("disconnected", () =>
+      this.status(navigator.onLine ? "Восстанавливаем связь…" : "Офлайн"),
+    );
+    peer.on("error", (err) => {
+      if (peer !== this.peer || this.stopped) return;
+      if (err.type === "unavailable-id") {
+        peer.destroy();
+        if (slot === "a") this.claim("b");
+        else {
+          this.status("Комната уже открыта на двух устройствах");
+          clearTimeout(this.retry);
+          this.retry = setTimeout(() => this.restart(), 12000);
+        }
+      } else if (err.type === "peer-unavailable") {
+        this.connecting = false;
+        this.status("Ждём второго");
+      } else {
+        this.status("Не удаётся связаться. Данные сохранены");
+        if (!this.connection?.open) {
+          clearTimeout(this.retry);
+          this.retry = setTimeout(() => this.restart(), 10000);
+        }
+      }
+    });
+  }
+  connect() {
+    if (this.connecting || this.connection?.open) return;
+    this.connecting = true;
+    this.bind(
+      this.peer.connect(`${this.prefix}-a`, {
+        reliable: true,
+        serialization: "json",
+      }),
+    );
+  }
+  bind(c) {
+    this.connection = c;
+    const timeout = setTimeout(() => {
+      if (!c.open) {
+        c.close();
+        this.connecting = false;
+      }
+    }, 7000);
+    c.on("open", () => {
+      clearTimeout(timeout);
+      this.connecting = false;
+      this.lastSeen = Date.now();
+      this.status("Вы вдвоём");
+      this.sync.hello();
+    });
+    c.on("data", (m) => {
+      this.lastSeen = Date.now();
+      this.sync.receive(m);
+    });
+    c.on("close", () => {
+      clearTimeout(timeout);
+      this.connecting = false;
+      if (this.connection === c) {
+        this.connection = null;
+        this.status(navigator.onLine ? "Ждём второго" : "Офлайн");
+      }
+    });
+    c.on("error", () => {
+      clearTimeout(timeout);
+      this.connecting = false;
+      c.close();
+    });
+  }
+  send(msg) {
+    if (this.connection?.open)
+      try {
+        this.connection.send(msg);
+      } catch {
+        this.status("Восстанавливаем связь…");
+      }
+  }
+  restart() {
+    if (this.stopped || !this.prefix) return;
+    clearTimeout(this.retry);
+    this.connection?.close();
+    this.peer?.destroy();
+    this.connection = null;
+    this.connecting = false;
+    this.claim("a");
+  }
+  stop() {
+    this.stopped = true;
+    clearInterval(this.timer);
+    clearTimeout(this.retry);
+    this.connection?.close();
+    this.peer?.destroy();
+    this.store.removeEventListener("change", this.change);
+    window.removeEventListener("online", this.resume);
+    window.removeEventListener("offline", this.offline);
+    document.removeEventListener("visibilitychange", this.resume);
+  }
 }
