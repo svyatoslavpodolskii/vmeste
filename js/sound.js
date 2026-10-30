@@ -18,16 +18,30 @@ function random(seed) {
     return (n >>> 0) / 4294967296;
   };
 }
+// Fold the extra tail into the beginning: the loop boundary follows the
+// original continuous signal, with a smooth crossfade away from the boundary.
+export function seamlessLoop(raw, overlap) {
+  const length = raw.length - overlap;
+  const result = raw.slice(0, length);
+  for (let n = 0; n < overlap; n++) {
+    const t = n / (overlap - 1);
+    const mix = t * t * (3 - 2 * t);
+    result[n] = raw[length + n] * (1 - mix) + raw[n] * mix;
+  }
+  return result;
+}
 export class NatureSound {
   constructor(seed) {
     this.seed = seed;
     this.nodes = [];
     this.started = false;
+    this.level = 0.65;
   }
   async start() {
     if (this.context) {
       await this.context.resume();
       this.started = true;
+      this.volume(this.level);
       return;
     }
     const Audio = window.AudioContext || window.webkitAudioContext;
@@ -66,25 +80,56 @@ export class NatureSound {
       const buffer = ctx.createBuffer(2, sr * 7, sr);
       for (let ch = 0; ch < 2; ch++) {
         const data = buffer.getChannelData(ch);
+        const overlap = Math.round(sr * 0.75);
+        const raw = new Float32Array(data.length + overlap);
         let brown = 0,
           pink = 0;
-        for (let n = 0; n < data.length; n++) {
+        for (let n = 0; n < raw.length; n++) {
           const white = rng() * 2 - 1;
           brown = (brown + 0.02 * white) / 1.02;
           pink = 0.985 * pink + 0.015 * white;
-          data[n] =
-            type === 0 ? white * 0.3 : type === 1 ? pink * 3 : brown * 3;
+          raw[n] = type === 0 ? white * 0.3 : type === 1 ? pink * 3 : brown * 3;
         }
+        data.set(seamlessLoop(raw, overlap));
       }
       buffers.push(buffer);
+    }
+    // Sustained, beatless harmonic beds: no note attacks or MIDI instruments.
+    // Integer cycles make every partial periodic at the buffer boundary.
+    const beds = [];
+    for (const root of [165, 220, 110]) {
+      const seconds = 8;
+      const buffer = ctx.createBuffer(2, sr * seconds, sr);
+      for (let ch = 0; ch < 2; ch++) {
+        const data = buffer.getChannelData(ch);
+        for (const [ratio, weight] of [
+          [1, 0.12],
+          [1.5, 0.045],
+          [2, 0.025],
+          [3, 0.009],
+        ]) {
+          const cycles = Math.round(root * ratio * seconds) + (ch ? 1 : -1);
+          const phase = rng() * Math.PI * 2;
+          for (let n = 0; n < data.length; n++) {
+            const t = n / data.length;
+            data[n] +=
+              Math.sin(2 * Math.PI * cycles * t + phase) *
+              weight *
+              (0.7 + 0.3 * Math.cos(2 * Math.PI * t + phase));
+          }
+        }
+      }
+      beds.push(buffer);
     }
     const lowpass = [500, 5500, 1800, 900, 4600, 2900, 450, 150];
     for (let i = 0; i < 8; i++) {
       const source = ctx.createBufferSource();
       source.buffer =
-        buffers[i === 1 || i === 4 ? 0 : i === 0 || i === 7 ? 2 : 1];
+        i >= 5
+          ? beds[i - 5]
+          : buffers[i === 1 || i === 4 ? 0 : i === 0 ? 2 : 1];
       source.loop = true;
-      source.playbackRate.value = 0.82 + rng() * 0.37;
+      source.playbackRate.value = i >= 5 ? 1 : 0.82 + rng() * 0.37;
       const hp = ctx.createBiquadFilter();
       hp.type = "highpass";
       hp.frequency.value = i === 4 ? 3100 : i === 1 ? 600 : i === 2 ? 400 : 40;
@@ -116,7 +161,7 @@ export class NatureSound {
       this.nodes.push({ source, hp, filter, gain, lfo, pan, base: lowpass[i] });
     }
     this.started = true;
-    master.gain.setTargetAtTime(0.6, ctx.currentTime, 2);
+    this.volume(this.level);
   }
   apply(contributors, ownId, mode) {
     if (!this.context || !this.started) return;
@@ -138,11 +183,13 @@ export class NatureSound {
     const rng = random(this.seed),
       offset = Math.floor(rng() * 8);
     for (let i = 0; i < 8; i++) {
-      const index = (i + offset) % 8,
+      const index = i,
         local = own.layers?.[index] ?? (index < 3 ? 1 : 0),
         remote = others.length
-          ? others.reduce((s, v) => s + (v.layers?.[(index + 3) % 8] ?? 0), 0) /
-            others.length
+          ? others.reduce(
+              (s, v) => s + (v.layers?.[(index + 3 + offset) % 8] ?? 0),
+              0,
+            ) / others.length
           : 0;
       const level =
         mode === "meditation"
@@ -169,9 +216,10 @@ export class NatureSound {
     this.wet.gain.setTargetAtTime(0.1 + space * 0.45, ctx.currentTime, 3);
   }
   volume(value) {
+    this.level = Math.max(0, Math.min(1, value));
     if (this.context)
       this.master.gain.setTargetAtTime(
-        Math.max(0, Math.min(1, value)) * 0.8,
+        this.level * 0.8,
         this.context.currentTime,
         0.3,
       );
