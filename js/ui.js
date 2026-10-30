@@ -1,3 +1,4 @@
+import { illustrations, avatars } from "../data/presentation.js";
 export const esc = (v) =>
   String(v ?? "").replace(
     /[&<>"']/g,
@@ -35,18 +36,7 @@ export const icon = (name, cls = "") =>
 export const btn = (text, action, cls = "soft", extra = "") =>
   `<button class="btn ${cls}" data-action="${action}" ${extra}>${text}</button>`;
 export function art(idea, cls = "") {
-  const allowed = [
-    "movie",
-    "music",
-    "quest",
-    "questions",
-    "games",
-    "food",
-    "art",
-    "walk",
-    "date",
-    "calm",
-  ];
+  const allowed = illustrations.map(([name]) => name);
   const file = String(idea.image || "").match(
     /^\.\/assets\/([a-z]+)\.svg$/,
   )?.[1];
@@ -78,6 +68,7 @@ export function sheet(html) {
   document.querySelector("#sheet-content").innerHTML =
     `<div class="sheet-handle"></div><button class="icon-btn close-sheet" data-action="close" aria-label="Закрыть">${icon("close")}</button>${html}`;
   if (!d.open) d.showModal();
+  d.scrollTop = 0;
   document.body.classList.add("modal-open");
 }
 export function closeSheet() {
@@ -88,8 +79,64 @@ export function closeSheet() {
 export function card(idea, store, { match = false } = {}) {
   const reaction = store.reaction(idea.id),
     liked = ["like", "favorite"].includes(reaction);
-  return `<article class="idea-card" data-idea="${esc(idea.id)}"><button class="art-button" data-action="detail" data-id="${esc(idea.id)}" aria-label="Открыть: ${esc(idea.title)}">${art(idea)}</button><div class="card-info"><button class="title-button" data-action="detail" data-id="${esc(idea.id)}"><h3>${esc(idea.title)}</h3></button><p>${esc(idea.description)}</p><div class="tags"><span>${icon("clock")}${duration(idea.duration || 30)}</span><span>${icon("home")}${esc(idea.location || "Дома")}</span><span class="mood">${esc(idea.mood || "Уютно")}</span></div>${match ? '<div class="match-label">♡ Понравилось вам обоим</div>' : ""}<div class="card-actions">${btn(icon("bookmark") + " В план", "add-plan", "soft", `data-id="${esc(idea.id)}"`)}</div></div><button class="icon-btn like ${liked ? "liked" : ""}" data-action="like" data-id="${esc(idea.id)}" aria-label="${liked ? "Убрать симпатию" : "Нравится"}: ${esc(idea.title)}" title="Нажмите — лайк; удерживайте — суперлайк" aria-pressed="${liked}">${reaction === "favorite" ? "♥★" : icon("heart")}</button></article>`;
+  const bond = affinity(store, idea);
+  return `<article class="idea-card bond-${bond.level}" data-idea="${esc(idea.id)}"><button class="art-button" data-action="detail" data-id="${esc(idea.id)}" aria-label="Открыть: ${esc(idea.title)}">${art(idea)}</button><div class="card-info"><button class="title-button" data-action="detail" data-id="${esc(idea.id)}"><h3>${esc(idea.title)}</h3></button><p>${esc(idea.description)}</p><div class="tags"><span>${icon("clock")}${duration(idea.duration || 30)}</span><span>${icon("home")}${esc(idea.location || "Дома")}</span><span class="mood">${esc(idea.mood || "Уютно")}</span></div>${match ? `<div class="match-label">${bond.html}${store.authCapacity>2?"Нравится нескольким участникам":"Понравилось вам обоим"}</div>` : ""}<div class="card-actions">${btn(icon("bookmark") + " В план", "add-plan", "soft", `data-id="${esc(idea.id)}"`)}</div></div><button class="icon-btn like ${liked ? "liked" : ""}" data-action="like" data-id="${esc(idea.id)}" aria-label="${liked ? "Убрать симпатию" : "Нравится"}: ${esc(idea.title)}" title="Нажмите — лайк; удерживайте — суперлайк" aria-pressed="${liked}">${reaction === "favorite" ? `<span class="super-heart">${icon("heart")}<small>✦</small></span>` : icon("heart")}</button></article>`;
 }
 export function empty(title, text, action = "ideas", label = "Найти идею") {
   return `<div class="empty"><span class="empty-icon">♡</span><h3>${title}</h3><p>${text}</p>${btn(label, action, "lavender")}</div>`;
+}
+
+export function affinity(store, idea) {
+  const ids =
+    store.authRoster?.map((r) => r.id) || store.users.map((u) => u.localUserId);
+  const reactions = store.data.reactions.filter(
+    (r) =>
+      r.ideaId === idea.id &&
+      !r.deletedAt &&
+      ["like", "favorite"].includes(r.reaction) &&
+      (!ids.length || ids.includes(r.userId)),
+  );
+  const unique = [...new Map(reactions.map((r) => [r.userId, r])).values()];
+  const both = unique.length >= 2,
+    fire = unique.filter((r) => r.reaction === "favorite").length>=2;
+  const anySuper = unique.some((r) => r.reaction === "favorite");
+  const level = fire
+    ? "fire"
+    : both
+      ? "mutual"
+      : anySuper
+        ? "super"
+        : unique.length
+          ? "liked"
+          : "";
+  const label = fire
+    ? "Оба поставили суперлайк"
+    : both
+      ? "Нравится вам обоим"
+      : anySuper
+        ? "Суперлайк одного из вас"
+        : unique.length
+          ? "Нравится одному из вас"
+          : "";
+  return {
+    level,
+    label,
+    html: level
+      ? `<span class="affinity affinity-${level}" title="${label}" aria-label="${label}">${icon("heart")}${fire ? '<span class="heart-spark">✦</span>' : anySuper && !both ? '<span class="heart-star">✦</span>' : ""}</span>`
+      : "",
+  };
+}
+
+export function avatarPicker(current = "🌷") {
+  const list = [...new Set([current, ...avatars])];
+  return `<fieldset class="avatar-picker"><legend>Ваш значок</legend><details><summary><span class="avatar-preview">${esc(current)}</span> Выбрать персонажа или символ</summary><div class="emoji-gallery">${list.map((a) => `<label title="${esc(a)}"><input type="radio" name="avatar" value="${esc(a)}" ${current === a ? "checked" : ""}><span>${a}</span></label>`).join("")}</div></details></fieldset>`;
+}
+export function visualPicker(idea = {}) {
+  const image = idea.image || "./assets/magic.svg",
+    isImage = !!idea.image;
+  return `<fieldset class="visual-picker"><legend>Оформление идеи</legend><div class="visual-modes"><label><input type="radio" name="visualMode" value="illustration" ${isImage ? "checked" : ""}><span>🖼️ Иллюстрация</span></label><label><input type="radio" name="visualMode" value="emoji" ${!isImage ? "checked" : ""}><span>✨ Эмодзи</span></label></div><div class="illustration-gallery">${illustrations.map(([name, label]) => `<label title="${label}"><input type="radio" name="artwork" value="./assets/${name}.svg" ${image === `./assets/${name}.svg` ? "checked" : ""}><img src="./assets/${name}.svg" alt="${label}"><span>${label}</span></label>`).join("")}${image.startsWith("data:") ? `<label><input type="radio" name="artwork" value="${esc(image)}" checked><img src="${esc(image)}" alt="Прежнее изображение"><span>Прежнее</span></label>` : ""}</div><div class="emoji-gallery idea-emojis">${[...new Set([idea.icon || "✨", ...avatars])].map((e) => `<label title="${esc(e)}"><input type="radio" name="icon" value="${esc(e)}" ${e === (idea.icon || "✨") ? "checked" : ""}><span>${e}</span></label>`).join("")}</div></fieldset>`;
+}
+export function suggestion(idea, store) {
+  const bond = affinity(store, idea);
+  return `<article class="suggestion bond-${bond.level}" data-suggestion="${esc(idea.id)}">${art(idea)}<button class="title-button" data-action="detail" data-id="${esc(idea.id)}">${esc(idea.title)}</button>${bond.html}${btn(icon("plus"), "add-plan", "soft", `data-id="${esc(idea.id)}" aria-label="Добавить: ${esc(idea.title)}"`)}</article>`;
 }

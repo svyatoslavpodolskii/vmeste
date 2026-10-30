@@ -60,7 +60,45 @@ export function validRecord(table, r, roomId) {
       typeof r.localUserId === "string" &&
       r.id === `${roomId}:${r.localUserId}`
     );
-  if (table === "plans")
+  if (table === "plans") {
+    if (
+      r.historyOwner != null &&
+      (typeof r.historyOwner !== "string" ||
+        r.historyOwner.length > 100 ||
+        !r.played ||
+        typeof r.played !== "object" ||
+        Array.isArray(r.played) ||
+        Object.entries(r.played).length > 300 ||
+        Object.entries(r.played).some(
+          ([key, time]) =>
+            key.length > 100 || !Number.isFinite(time) || time < 0,
+        ))
+    )
+      return false;
+    if (
+      r.discoveryOwner != null &&
+      (typeof r.discoveryOwner !== "string" ||
+        !["plan", "discover"].includes(r.discoveryMode) ||
+        !Array.isArray(r.remaining) ||
+        !Array.isArray(r.seen) ||
+        r.remaining.length > 1500 ||
+        r.seen.length > 1500 ||
+        [...r.remaining, ...r.seen].some(
+          (id) => typeof id !== "string" || id.length > 200,
+        ))
+    )
+      return false;
+    if (
+      r.arcadeRecord != null &&
+      (!r.arcadeRecord ||
+        typeof r.arcadeRecord.kind !== "string" ||
+        !Number.isFinite(r.arcadeRecord.seconds) ||
+        r.arcadeRecord.seconds < 0 ||
+        !Array.isArray(r.arcadeRecord.players) ||
+        r.arcadeRecord.players.length > 10 ||
+        r.arcadeRecord.players.some((id) => typeof id !== "string"))
+    )
+      return false;
     return (
       typeof r.title === "string" &&
       r.title.length <= 160 &&
@@ -68,6 +106,7 @@ export function validRecord(table, r, roomId) {
       r.items.length <= 100 &&
       r.items.every((i) => typeof i === "string")
     );
+  }
   return false;
 }
 export function metadata(store) {

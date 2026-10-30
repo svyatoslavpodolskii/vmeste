@@ -1,12 +1,16 @@
 {
   "name": "vmeste",
-  "version": "2.1.0",
+  "version": "3.0.0",
   "private": true,
   "type": "module",
   "scripts": {
     "start": "node scripts/serve.mjs",
-    "test": "node tests/core.test.mjs",
-    "test:browser": "node tests/browser.mjs"
+    "test": "node tests/core.test.mjs && node tests/auth.test.mjs",
+    "test:browser": "node tests/browser.mjs",
+    "test:rooms": "node tests/rooms-live.mjs",
+    "test:party": "node tests/party-live.mjs",
+    "test:pwa": "node tests/pwa-update.mjs",
+    "test:museum": "node tests/museum-live.mjs"
   },
   "devDependencies": {
     "fake-indexeddb": "6.2.4",

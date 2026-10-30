@@ -30,7 +30,13 @@ export class Store extends EventTarget {
     ].filter((i) => !this.data.ideas.find((r) => r.id === i.id && r.deletedAt));
   }
   get users() {
-    return this.data.users.filter((r) => !r.deletedAt);
+    return this.data.users.filter(
+      (r) =>
+        !r.deletedAt &&
+        !r.provisional &&
+        (!this.authRoster ||
+          this.authRoster.some((m) => m.id === r.localUserId)),
+    );
   }
   reaction(id, userId = this.userId) {
     return this.data.reactions.find(
@@ -45,6 +51,8 @@ export class Store extends EventTarget {
             .filter(
               (r) =>
                 r.ideaId === i.id &&
+                (!this.authRoster ||
+                  this.authRoster.some((m) => m.id === r.userId)) &&
                 !r.deletedAt &&
                 ["like", "favorite"].includes(r.reaction),
             )
@@ -75,14 +83,36 @@ export class Store extends EventTarget {
   merge(entries, local = false) {
     const operation = async () => {
       const accepted = [];
-      for (const { table, record } of entries) {
+      for (const { table, record: incoming } of entries) {
+        let record = incoming;
         if (!validRecord(table, record, this.roomId)) continue;
         const pending = accepted.find(
           (e) => e.table === table && e.record.id === record.id,
         );
         const old =
           pending?.record || this.data[table].find((r) => r.id === record.id);
-        if (compare(record, old) > 0) {
+        let historyChanged = false;
+        if (
+          table === "plans" &&
+          record.historyOwner &&
+          old?.historyOwner === record.historyOwner
+        ) {
+          const played = { ...(old.played || {}) };
+          for (const [key, time] of Object.entries(record.played || {}))
+            played[key] = Math.max(played[key] || 0, time);
+          const merged = Object.fromEntries(
+            Object.entries(played)
+              .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+              .slice(0, 300),
+          );
+          historyChanged =
+            JSON.stringify(merged) !== JSON.stringify(old.played || {});
+          record = {
+            ...(compare(record, old) > 0 ? record : old),
+            played: merged,
+          };
+        }
+        if (historyChanged || compare(record, old) > 0) {
           if (pending) pending.record = record;
           else accepted.push({ table, record });
         }

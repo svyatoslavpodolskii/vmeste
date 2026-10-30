@@ -38,9 +38,9 @@ try {
     "build overflow",
   );
   const before = await page.locator(".suggestion").count();
-  await page
-    .locator('[data-action="more-suggestions"]')
-    .scrollIntoViewIfNeeded();
+  await page.locator("#recommendation-feed").evaluate((el) => {
+    el.scrollLeft = el.scrollWidth;
+  });
   await page.waitForTimeout(500);
   assert.ok((await page.locator(".suggestion").count()) > before);
   await page.locator('[data-action="surprise"]').click();
@@ -60,7 +60,7 @@ try {
   await page.locator('[data-action="play"][data-id="questions"]').click();
   const seen = new Set();
   for (let n = 0; n < 29; n++) {
-    const q = await page.locator(".question-card p").textContent();
+    const q = await page.locator(".table-card p").textContent();
     assert.ok(!seen.has(q), "no repeats");
     seen.add(q);
     await page.locator('[data-action="next-question"]').click();
@@ -70,28 +70,35 @@ try {
   assert.ok(seen.has("Уникальный вопрос для теста?"));
   await page.locator(".close-sheet").click();
   await page.locator('[data-action="play"][data-id="riddles"]').click();
-  await page.locator("summary").click();
-  assert.ok((await page.locator("details p").innerText()).length > 40);
+  await page.locator(".riddle-answer summary").click();
+  assert.ok((await page.locator(".riddle-answer p").innerText()).length > 40);
   await page.locator(".close-sheet").click();
   await page.screenshot({ path: "test-results/games-v2.png", fullPage: true });
   await page.locator('[data-action="ideas"]').last().click();
   await page.locator('[data-action="new-idea"]').first().click();
   await page
     .locator('#idea-form input[name="title"]')
-    .fill("Идея с фотографией");
+    .fill("Идея с иллюстрацией");
   await page
-    .locator('#idea-form input[name="photo"]')
-    .setInputFiles("assets/icon-512.png");
+    .locator('#idea-form input[name="visualMode"][value="illustration"]')
+    .check();
+  await page
+    .locator('#idea-form input[name="artwork"][value="./assets/magic.svg"]')
+    .check();
   await page.locator('#idea-form button[type="submit"]').click();
   await page
-    .getByRole("heading", { name: "Идея с фотографией", exact: true })
+    .getByRole("heading", { name: "Идея с иллюстрацией", exact: true })
     .waitFor();
-  assert.ok(await page.locator(".user-art").count());
+  assert.ok(
+    await page.locator('.idea-card img[src="./assets/magic.svg"]').count(),
+  );
   await page.reload();
   await page
-    .getByRole("heading", { name: "Идея с фотографией", exact: true })
+    .getByRole("heading", { name: "Идея с иллюстрацией", exact: true })
     .waitFor();
-  assert.ok(await page.locator(".user-art").count());
+  assert.ok(
+    await page.locator('.idea-card img[src="./assets/magic.svg"]').count(),
+  );
   for (const width of [360, 390, 450, 1280]) {
     await page.setViewportSize({ width, height: 844 });
     assert.ok(
@@ -103,7 +110,7 @@ try {
   }
   assert.deepEqual(errors, []);
   console.log(
-    "PASS v2: daily like, superlike, swipe, recommendations, generator, custom pool, no repeats, riddles, photo persistence, responsive widths",
+    "PASS v3: daily like, superlike, swipe, recommendations, generator, custom pool, no repeats, riddles, illustration persistence, responsive widths",
   );
 } finally {
   await browser.close();

@@ -43,6 +43,7 @@ try {
   assert.ok(room.length >= 24);
   record("Create room and persistent identity");
   await nav(a, "Идеи");
+  await a.getByLabel("Поиск идей").fill("Киновечер");
   await a
     .getByRole("button", { name: "Нравится: Киновечер + какао", exact: true })
     .click();
@@ -107,11 +108,11 @@ try {
     .getByRole("button", { name: "Открыть: 20 вопросов", exact: true })
     .click();
   await a.getByRole("button", { name: "Начать игру", exact: false }).click();
-  const q1 = await a.locator(".question-card p").textContent();
+  const q1 = await a.locator(".table-card p").textContent();
   await a
     .getByRole("button", { name: "Следующая карточка", exact: false })
     .click();
-  assert.notEqual(await a.locator(".question-card p").textContent(), q1);
+  assert.notEqual(await a.locator(".table-card p").textContent(), q1);
   await a.screenshot({ path: "test-results/game.png" });
   await a.getByRole("button", { name: "Закрыть", exact: true }).click();
   record("Playable question cards");
@@ -149,6 +150,9 @@ try {
   await b.goto(base + "?room=" + room + "&participant=2");
   await b.getByLabel("Как вас зовут?").fill("Саша");
   await b.getByRole("button", { name: "Войти в нашу комнату" }).click();
+  await a.locator('[data-action="approve-pair"]').waitFor({ timeout: 45000 });
+  await a.locator('[data-action="approve-pair"]').click();
+  await b.locator('[data-action="confirm-pair-code"]').click();
   await b.getByRole("button", { name: "Идеи", exact: true }).waitFor();
   const connected = await waitFor(
     async () =>

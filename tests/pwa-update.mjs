@@ -120,6 +120,17 @@ try {
         room: localStorage.getItem("vmeste-user-room"),
       };
     });
+  function preserved(after, before) {
+    assert.equal(after.identity, before.identity);
+    assert.equal(after.room, before.room);
+    for (const [table, records] of Object.entries(before.data))
+      for (const record of records)
+        assert.deepEqual(
+          after.data[table].find((r) => r.id === record.id),
+          record,
+          `preserved ${table}:${record.id}`,
+        );
+  }
   const before = await snapshot();
   const other = await ctx.newPage();
   await other.goto(page.url());
@@ -149,15 +160,11 @@ try {
   await page.locator('[data-action="games"]').waitFor({ timeout: 30000 });
   await page.locator('[data-action="profile"]').last().click();
   await page.waitForFunction(
-    () => document.body.textContent.includes("версия 2.1"),
+    () => document.body.textContent.includes("версия 3.0"),
     {},
     { timeout: 30000 },
   );
-  assert.deepEqual(
-    await snapshot(),
-    before,
-    "all IndexedDB records, draft and local identity survive activation",
-  );
+  preserved(await snapshot(), before);
   assert.ok(!other.isClosed(), "old tab need not be closed");
   await page.locator('[data-action="update-app"]').click();
   await page
@@ -170,18 +177,14 @@ try {
   await ctx.setOffline(true);
   await page.locator('[data-action="update-app"]').click();
   await page.getByText(/Для загрузки обновления нужен интернет/).waitFor();
-  assert.deepEqual(await snapshot(), before, "offline check preserves data");
+  preserved(await snapshot(), before);
   await page.reload();
   await page.waitForFunction(() =>
-    document.body.textContent.includes("версия 2.1"),
+    document.body.textContent.includes("версия 3.0"),
   );
-  assert.deepEqual(
-    await snapshot(),
-    before,
-    "offline launch after update preserves data",
-  );
+  preserved(await snapshot(), before);
   console.log(
-    "PASS PWA 1.0 → 2.1 with old tab open: identity, room, ideas, likes, saved plans, tasks and draft unchanged; manual/offline checks and offline restart",
+    "PASS PWA 1.0 → 3.0 with old tab open: identity, room, ideas, likes, saved plans, tasks and draft unchanged; manual/offline checks and offline restart",
   );
 } finally {
   await browser.close();

@@ -87,6 +87,9 @@ try {
   await b.goto(url);
   await b.getByLabel("Как вас зовут?").fill("Саша");
   await b.getByRole("button", { name: "Войти в нашу комнату" }).click();
+  await a.locator('[data-action="approve-pair"]').waitFor({ timeout: 45000 });
+  await a.locator('[data-action="approve-pair"]').click();
+  await b.locator('[data-action="confirm-pair-code"]').click();
   await connect(b);
   await Promise.all([ca.setOffline(true), cb.setOffline(true)]);
   await add(a, "Офлайн от Ани");
@@ -120,6 +123,9 @@ try {
   await c.goto(url);
   await c.getByLabel("Как вас зовут?").fill("Восстановление");
   await c.getByRole("button", { name: "Войти в нашу комнату" }).click();
+  await a.locator('[data-action="approve-pair"]').waitFor({ timeout: 45000 });
+  await a.locator('[data-action="approve-pair"]').click();
+  await c.locator('[data-action="confirm-pair-code"]').click();
   await connect(c);
   await search(c, "Офлайн от Саши");
   await c.getByLabel("Поиск идей").fill("Офлайн от Ани");
@@ -131,13 +137,8 @@ try {
   );
   console.log("PASS empty device restores snapshot including deletion");
   await nav(c, "Профиль");
-  await c.getByRole("button", { name: "О связи и приватности" }).click();
-  await c.getByRole("button", { name: "Это я: Саша", exact: true }).click();
-  await c.getByRole("button", { name: "Продолжить", exact: true }).click();
-  await connect(c);
-  await nav(c, "Профиль");
   assert.equal(await c.getByLabel("Имя", { exact: true }).inputValue(), "Саша");
-  console.log("PASS original participant identity restored");
+  console.log("PASS original identity restored only after partner approval");
   await nav(a, "Собрать");
   await a.getByRole("button", { name: "Удиви нас", exact: false }).click();
   await a

@@ -1,4 +1,14 @@
-﻿import { Database } from "./db.js";
+import { PartyGames, partyKinds, partyScreen } from "./party.js";
+import { roomSymbols, savedRooms, rememberRoom } from "./rooms.js";
+import {
+  gamePool as poolFor,
+  sessionDeck,
+  cardKey,
+  playedHistory,
+} from "./game-pools.js";
+import { gameBoxes } from "../data/presentation.js";
+import { RoomAuth } from "./auth.js";
+import { Database } from "./db.js";
 import { Store } from "./store.js";
 import { RoomPeer } from "./peer.js";
 import {
@@ -10,6 +20,9 @@ import {
   sheet,
   closeSheet,
   toast,
+  visualPicker,
+  affinity,
+  suggestion,
 } from "./ui.js";
 import {
   onboarding,
@@ -20,6 +33,7 @@ import {
   matchesScreen,
   profileScreen,
   gamesScreen,
+  feedBatch,
 } from "./screens.js";
 import {
   surprise,
@@ -40,19 +54,27 @@ const app = document.querySelector("#app");
 const params = new URLSearchParams(location.search);
 const identityKey =
   params.get("participant") === "2" ? "vmeste-user-2" : "vmeste-user";
-let userId = localStorage.getItem(identityKey) || crypto.randomUUID();
+const baseUserId = localStorage.getItem(identityKey) || crypto.randomUUID();
+let userId = baseUserId;
 localStorage.setItem(identityKey, userId);
 const lastRoomKey = identityKey + "-room";
 const validRoom = (id) =>
   typeof id === "string" && /^[a-zA-Z0-9_-]{24,100}$/.test(id);
 let roomId = params.get("room") || localStorage.getItem(lastRoomKey);
 if (!validRoom(roomId)) roomId = null;
+if (roomId)
+  userId =
+    localStorage.getItem(identityKey + ":member:" + roomId) || baseUserId;
 let db,
   store,
   peer,
   installPrompt,
   matchIds = new Set(),
-  game = null;
+  game = null,
+  roomAuth,
+  approvalResolve,
+  approvalClient,
+  confirmCodeResolve;
 const state = {
   tab: ["ideas", "build", "matches", "games", "profile"].includes(
     location.hash.slice(1),
@@ -69,19 +91,55 @@ const state = {
   status: navigator.onLine ? "Ждём второго" : "Офлайн",
   draft: [],
 };
+const party = new PartyGames({
+  store: () => store,
+  peer: () => peer,
+  soundSeed: () => `${roomId}:${userId}:${roomAuth?.record.publicKey.x}`,
+  onFrame: (frame) => {
+    state.partyFrame = frame;
+    if (!document.querySelector("#sheet").open && store?.authEstablished)
+      render();
+  },
+});
 function render() {
   if (!store) {
     app.innerHTML = onboarding(roomId);
     return;
   }
+  if (store.authEstablished && (store.authViewer || state.screenOnly)) {
+    const f = state.screenFrame;
+    app.innerHTML = `<main class="projector"><header><span>${roomSymbols(roomId)}</span>${btn("Мои комнаты", "rooms", "text")}${!store.authViewer ? btn("Играть здесь", "client-mode", "text") : ""}${btn("На весь экран", "fullscreen", "text")}</header><div class="projector-card"><span class="eyebrow">ОБЩИЙ ЭКРАН</span><div class="projector-live">${f ? partyScreen(f) : `<h1>Экран готов</h1><p>Начните игру на телефоне. Здесь появится общая карточка — без скрытых ответов и личных данных.</p>`}</div></div><footer>Управление остаётся на телефоне</footer></main>`;
+    return;
+  }
+  if (store.authEstablished === false) {
+    app.innerHTML = `<main class="onboarding pairing-lobby"><span class="eyebrow">ВАША КОМНАТА</span><h1>Вас ждут?</h1><div class="pair-orbit">${state.pairCode || "🪐"}</div><h2>${esc(state.pairMessage || "Отправляем запрос на вход…")}</h2><p class="muted">Откройте комнату на устройстве второго участника. Пока он не подтвердит вход, общие данные сюда не передаются.</p>${state.confirmCodePending ? `<p>У ${esc(state.confirmPeer || "вашего человека")} на экране те же значки?</p>${btn("Значки совпадают · войти", "confirm-pair-code", "primary wide")}${btn("Это не мой человек", "decline-pair-code", "text wide")}` : btn("Повторить подключение", "retry-pair", "primary")}${btn("Выйти", "confirm-leave", "text")}</main>`;
+    return;
+  }
   state.store = store;
-  state.roomLabel = roomId.slice(0, 6).toUpperCase();
+  state.roomLabel = roomSymbols(roomId);
+  rememberRoom(identityKey, {
+    id: roomId,
+    name:
+      store.users.map((u) => u.displayName).join(" и ") ||
+      roomAuth?.record.roster.map((r) => r.name).join(" и "),
+    capacity: store.authCapacity,
+    viewer: store.authViewer,
+  });
   const scroll = window.scrollY;
-  app.innerHTML = `<div class="app-shell">${header(state)}<main id="main">${{ ideas: ideasScreen, build: buildScreen, matches: matchesScreen, profile: profileScreen, games: gamesScreen }[state.tab](state)}</main>${navigation(state.tab, store.matches.length)}</div>`;
+  const feedScroll =
+    document.querySelector("#recommendation-feed")?.scrollLeft || 0;
+  app.innerHTML = `<div class="app-shell ${store.authCapacity > 2 ? "friends-theme" : ""}">${header(state)}<main id="main">${partyKinds.includes(state.partyFrame?.kind) && state.partyFrame.controllerClient !== peer?.peer?.id ? `<aside class="live-game-banner"><span>🎲 ${esc(state.partyFrame.title)}</span>${btn("Присоединиться", "open-live-game", "primary")}</aside>` : ""}${{ ideas: ideasScreen, build: buildScreen, matches: matchesScreen, profile: profileScreen, games: gamesScreen }[state.tab](state)}</main>${navigation(state.tab, store.matches.length, store.authCapacity)}${["ideas", "build"].includes(state.tab) ? `<button class="discover-fab" data-action="swipe" aria-label="Листать идеи">${icon("shuffle")}<span>Листать идеи</span></button>` : ""}${state.connectedIntro ? '<div class="connection-intro" aria-live="polite"><span>✨</span><h2>Вы вместе</h2><p>Свои люди. Одна маленькая вселенная.</p></div>' : ""}</div>`;
   window.scrollTo(0, scroll);
+  const feed = document.querySelector("#recommendation-feed");
+  if (feed) feed.scrollLeft = feedScroll;
 }
 function navigate(tab) {
   closeSheet();
+  if (tab === "build" && state.tab !== "build") {
+    state.feedOrder = null;
+    state.feedStart = 0;
+    state.feedCount = 10;
+  }
   state.tab = tab;
   location.hash = tab;
   render();
@@ -98,24 +156,145 @@ function setStatus(text) {
       ["Вы вдвоём", "Всё синхронизировано"].includes(text),
     );
 }
-async function enter(room, name, avatar = "🌷") {
+async function enter(room, name, avatar = "🌷", creator = false, options = {}) {
+  party.reset();
+  state.partyFrame = null;
+  state.screenFrame = null;
+  state.screenOnly = false;
   peer?.stop();
+  const member =
+    localStorage.getItem(identityKey + ":member:" + room) || baseUserId;
+  if (member !== userId) {
+    db?.close();
+    userId = member;
+    db = await new Database("vmeste-" + member).open();
+  }
+  state.feedOrder = null;
+  state.feedStart = 0;
+  state.feedCount = 10;
   roomId = room;
   localStorage.setItem(lastRoomKey, room);
   const url = new URL(location.href);
   url.searchParams.set("room", room);
   history.replaceState(null, "", url);
   store = await new Store(db, room, userId).load();
-  const me = store.users.find((u) => u.localUserId === userId);
+  const me = store.data.users.find(
+    (u) => u.localUserId === userId && !u.deletedAt,
+  );
+  const previouslyKnown = !!me && !me.provisional;
   if (name || !me)
     await store.save("users", {
       id: `${room}:${userId}`,
       localUserId: userId,
       displayName: name || "Вы",
       avatar: me?.avatar || avatar,
+      provisional: !creator && !previouslyKnown,
     });
   const draft = await db.all("meta", room);
   state.draft = draft.find((r) => r.id === `${room}:draft`)?.items || [];
+  roomAuth = await RoomAuth.create(store, {
+    established: creator || previouslyKnown,
+    capacity: options.capacity,
+    requestedMode: options.requestedMode,
+    onlineMembers: () => peer?.onlineMembers() || new Set([userId]),
+    onRequest: (request) =>
+      new Promise((resolve) => {
+        if (approvalResolve) {
+          approvalResolve(false);
+          approvalResolve = null;
+        }
+        approvalResolve = resolve;
+        approvalClient = request.clientId;
+        sheet(
+          `<div class="pair-orbit">${request.code}</div><span class="eyebrow">СВЕРЬТЕ ЗНАЧКИ НА ДВУХ ЭКРАНАХ</span><h2>${esc(request.name)} просит подключиться</h2><p>${request.mode === "display" ? "Общий экран получит только открытую игровую карточку, без вашей базы и скрытых ответов." : request.restoring ? "Передайте устройству одну из прежних ролей. Идеи, реакции и планы восстановятся от подключённого участника." : "Примите нового участника в вашу комнату."}</p><label>Разрешить как<select id="admission-target">${request.targets.map((t) => `<option value="${esc(t.id)}">${esc(t.name)}</option>`).join("")}</select></label><p class="muted">Принимайте только вашего человека, если значки на экранах совпадают.</p><div class="row">${btn("Отклонить", "deny-pair", "soft")}${btn("Подтвердить подключение", "approve-pair", "primary")}</div>`,
+        );
+      }),
+    onConfirm: (request) =>
+      new Promise((resolve) => {
+        confirmCodeResolve = resolve;
+        state.confirmClient = request.clientId;
+        state.pairCode = request.code;
+        state.confirmPeer = request.name;
+        state.confirmCodePending = true;
+        state.pairMessage =
+          "Подтвердите одинаковые значки на обоих устройствах";
+        render();
+      }),
+    onPendingClosed: (clientId) => {
+      if (confirmCodeResolve && state.confirmClient === clientId) {
+        const resolve = confirmCodeResolve;
+        confirmCodeResolve = null;
+        state.confirmCodePending = false;
+        resolve(false);
+        if (!store?.authEstablished) render();
+      }
+      if (approvalResolve && approvalClient === clientId) {
+        const resolve = approvalResolve;
+        approvalResolve = null;
+        approvalClient = null;
+        closeSheet();
+        resolve(false);
+      }
+    },
+    onWaiting: (info) => {
+      state.pairCode = info?.code;
+      state.pairMessage = info?.message;
+      if (store && !store.authEstablished) render();
+    },
+    onAdmitted: async (id, name) => {
+      const previous = userId;
+      if (id !== userId) {
+        const provisional = store.data.users.find(
+          (u) => u.localUserId === previous && u.provisional,
+        );
+        if (provisional) await store.remove("users", provisional.id);
+        const nextDb = await new Database("vmeste-" + id).open();
+        await nextDb.batch([
+          ...store.export().entries,
+          ...(await db.all("meta", roomId)).map((record) => ({
+            table: "meta",
+            record,
+          })),
+        ]);
+        db.close();
+        db = nextDb;
+        store.db = db;
+        userId = id;
+        store.userId = id;
+        localStorage.setItem(identityKey + ":member:" + roomId, id);
+      }
+      if (store.authViewer) {
+        state.tab = "profile";
+        render();
+        return;
+      }
+      if (!store.data.users.some((u) => u.localUserId === id && !u.deletedAt))
+        await store.save("users", {
+          id: `${roomId}:${id}`,
+          localUserId: id,
+          displayName: name,
+          avatar: "🧝",
+          provisional: false,
+        });
+      else if (store.data.users.find((u) => u.localUserId === id)?.provisional)
+        await store.save("users", {
+          id: `${roomId}:${id}`,
+          provisional: false,
+        });
+      state.tab = "profile";
+      location.hash = "profile";
+      render();
+    },
+    onConnected: () => {
+      state.connectedIntro = true;
+      toast("Вы снова вместе ✨");
+      render();
+      setTimeout(() => {
+        state.connectedIntro = false;
+        render();
+      }, 2200);
+    },
+  });
   matchIds = new Set(store.matches.map((i) => i.id));
   store.addEventListener("change", (e) => {
     const newMatches = store.matches.filter((i) => !matchIds.has(i.id));
@@ -129,14 +308,38 @@ async function enter(room, name, avatar = "🌷") {
       );
     }
     if (!document.querySelector("#sheet").open) render();
-    if (e.detail.local && peer?.connection?.open)
+    const restoredDraft = e.detail.entries.find(
+      (e) =>
+        e.table === "plans" &&
+        e.record.draftOwner === userId &&
+        !e.record.deletedAt,
+    );
+    if (restoredDraft) {
+      state.draft = [...restoredDraft.record.items];
+      db.put("meta", { id: `${roomId}:draft`, roomId, items: state.draft });
+      if (!document.querySelector("#sheet").open) render();
+    }
+    if (e.detail.local && peer?.admission?.authorized)
       setStatus("Всё синхронизировано");
   });
+  if (
+    store.authEstablished &&
+    !store.authViewer &&
+    !store.data.plans.some((p) => p.draftOwner === userId)
+  )
+    await persistDraft();
   render();
-  peer = new RoomPeer(store, setStatus);
+  peer = new RoomPeer(store, setStatus, roomAuth);
 }
 async function persistDraft() {
   await db.put("meta", { id: `${roomId}:draft`, roomId, items: state.draft });
+  if (store?.authEstablished)
+    await store.save("plans", {
+      id: `${roomId}:draft:${userId}`,
+      title: "Текущий вечер",
+      items: [...state.draft],
+      draftOwner: userId,
+    });
 }
 function ideaById(id) {
   return store.ideas.find((i) => i.id === id);
@@ -161,7 +364,7 @@ function detail(id) {
 function ideaForm(id) {
   const i = id ? ideaById(id) : {};
   sheet(
-    `<span class="eyebrow">ЛУЧШИЕ ИДЕИ — ВАШИ</span><h2>${id ? "Изменить идею" : "А давай…"}</h2><p class="muted">Достаточно названия. Остальное — по желанию.</p><form id="idea-form" data-id="${esc(id || "")}"><label>Название<input name="title" placeholder="Например, встретить рассвет" maxlength="160" required value="${esc(i.title || "")}"></label><label>Пару слов об идее<textarea name="description" maxlength="4000" placeholder="Что будем делать?">${esc(i.description || "")}</textarea></label><label>Картинка (по желанию)<input type="file" name="photo" accept="image/png,image/jpeg,image/webp"></label>${i.image ? '<label class="check-label"><input type="checkbox" name="removeImage">Убрать картинку</label>' : ""}<div class="form-grid"><label>Категория<select name="category">${["Дома", "Прогулки", "Игры", "Задания", "Еда", "Музыка", "Разговоры", "Творчество", "Свидания"].map((c) => `<option ${i.category === c ? "selected" : ""}>${c}</option>`).join("")}</select></label><label>Настроение<select name="mood">${["Уютно", "Спокойно", "Весело", "Близко", "Активно", "Творчески", "Необычно"].map((c) => `<option ${i.mood === c ? "selected" : ""}>${c}</option>`).join("")}</select></label><label>Где<select name="location">${["Дома", "На улице", "Где угодно"].map((c) => `<option ${i.location === c ? "selected" : ""}>${c}</option>`).join("")}</select></label><label>Минут<input name="duration" type="number" inputmode="numeric" min="1" max="1440" value="${i.duration || 30}"></label><label>Примерно, ₸<input name="cost" type="number" inputmode="numeric" min="0" max="10000000" value="${i.cost || 0}"></label><label>Значок<input name="icon" maxlength="8" value="${esc(i.icon || "✨")}"></label></div><button class="btn primary wide" type="submit">${id ? "Сохранить изменения" : "Добавить нашу идею"}</button></form>`,
+    `<span class="eyebrow">ЛУЧШИЕ ИДЕИ — ВАШИ</span><h2>${id ? "Изменить идею" : "А давай…"}</h2><p class="muted">Достаточно названия. Остальное — по желанию.</p><form id="idea-form" data-id="${esc(id || "")}"><label>Название<input name="title" placeholder="Например, встретить рассвет" maxlength="160" required value="${esc(i.title || "")}"></label><label>Пару слов об идее<textarea name="description" maxlength="4000" placeholder="Что будем делать?">${esc(i.description || "")}</textarea></label>${visualPicker(i)}<div class="form-grid"><label>Категория<select name="category">${["Дома", "Прогулки", "Игры", "Задания", "Еда", "Музыка", "Разговоры", "Творчество", "Свидания"].map((c) => `<option ${i.category === c ? "selected" : ""}>${c}</option>`).join("")}</select></label><label>Настроение<select name="mood">${["Уютно", "Спокойно", "Весело", "Близко", "Активно", "Творчески", "Необычно"].map((c) => `<option ${i.mood === c ? "selected" : ""}>${c}</option>`).join("")}</select></label><label>Где<select name="location">${["Дома", "На улице", "Где угодно"].map((c) => `<option ${i.location === c ? "selected" : ""}>${c}</option>`).join("")}</select></label><label>Минут<input name="duration" type="number" inputmode="numeric" min="1" max="1440" value="${i.duration || 30}"></label><label>Примерно, ₸<input name="cost" type="number" inputmode="numeric" min="0" max="10000000" value="${i.cost || 0}"></label></div><button class="btn primary wide" type="submit">${id ? "Сохранить изменения" : "Добавить нашу идею"}</button></form>`,
   );
 }
 function filterSheet() {
@@ -182,87 +385,279 @@ function filterSheet() {
       )}</select></label><label class="check-label"><input name="favorites" type="checkbox" ${state.onlyFavorites ? "checked" : ""}>Только с сердечком</label><button class="btn primary wide" type="submit">Найти занятие</button></form>`,
   );
 }
-const gameNames = {
-  questions: "Вопросы друг другу",
-  mixed: "Правда или действие",
-  riddles: "Данетки",
-  choice: "Что бы ты выбрал?",
-  likely: "Кто скорее?",
-};
+const gameNames = Object.fromEntries(gameBoxes.map((g) => [g.id, g.title]));
 function gamePool(kind) {
-  const own = store.data.customTasks.filter((t) => !t.deletedAt);
-  const q = [
-    ...questions,
-    ...own.filter((t) => t.kind === "question").map((t) => t.title),
-  ];
-  const truth = [
-    ...truths,
-    ...own.filter((t) => t.kind === "truth").map((t) => t.title),
-  ];
-  const dare = [
-    ...dares,
-    ...own.filter((t) => !t.kind || t.kind === "dare").map((t) => t.title),
-  ];
-  return kind === "riddles"
-    ? riddles
-    : [
-        ...new Set(
-          kind === "questions"
-            ? [...q, ...truth]
-            : kind === "mixed"
-              ? [...q, ...truth]
-                  .map((x) => "Правда · " + x)
-                  .concat(dare.map((x) => "Действие · " + x))
-              : kind === "choice"
-                ? choices
-                : likely,
-        ),
-      ];
+  return poolFor(store, kind);
 }
+let gameTimer,
+  historyQueue = Promise.resolve();
 function startGame(kind) {
+  if (partyKinds.includes(kind)) {
+    party.start(kind);
+    return;
+  }
+  party.audio?.stop();
   const key = `${roomId}:deck:${kind}`;
-  game = { kind, key };
+  game = { kind, key, phase: 0, score: 0, attempts: 0, builtAt: Date.now() };
   try {
     Object.assign(game, JSON.parse(localStorage.getItem(key)) || {});
   } catch {}
-  if (!Array.isArray(game.order) || !game.order.length)
-    game.order = shuffle(gamePool(kind));
+  const fresh = sessionDeck(store, kind),
+    history = playedHistory(store);
+  const newlyAdded = store.data.customTasks.some(
+    (t) =>
+      !t.deletedAt &&
+      !history[cardKey(t.title)] &&
+      !game.order?.some((item) => cardKey(item) === cardKey(t.title)) &&
+      fresh.some((item) => cardKey(item) === cardKey(t.title)),
+  );
+  if (!Array.isArray(game.order) || !game.order.length || newlyAdded) {
+    game.order = fresh;
+    game.builtAt = Date.now();
+    game.index = 0;
+    game.phase = 0;
+    game.markedIndex = -1;
+  }
   gameView();
 }
 function gameView() {
-  localStorage.setItem(
-    game.key,
-    JSON.stringify({ order: game.order, index: game.index || 0 }),
-  );
+  clearInterval(gameTimer);
   const index = game.index || 0,
     item = game.order[index],
-    done = index >= game.order.length;
+    done = index >= game.order.length,
+    box = gameBoxes.find((b) => b.id === game.kind) || gameBoxes[0];
+  localStorage.setItem(
+    game.key,
+    JSON.stringify({ ...game, key: undefined, kind: undefined }),
+  );
+  let body = "",
+    controls = "";
+  if (!done && game.markedIndex !== index) {
+    game.markedIndex = index;
+    const key = cardKey(item);
+    historyQueue = historyQueue
+      .then(async () => {
+        const id = `${roomId}:history:${userId}`,
+          old = store.data.plans.find((p) => p.id === id);
+        const played = { ...(old?.played || {}), [key]: Date.now() };
+        const recent = Object.fromEntries(
+          Object.entries(played)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 300),
+        );
+        await store.save("plans", {
+          id,
+          title: "История игр",
+          items: [],
+          historyOwner: userId,
+          played: recent,
+        });
+      })
+      .catch(() => toast("Не удалось сохранить историю игры"));
+  }
+  const text =
+    typeof item === "object"
+      ? item.title
+      : String(item || "").replace(/^(Правда|Действие) · /, "");
+  const phase = game.phase || 0;
+  if (done) {
+    body = `<div class="deck-finale">${box.emoji}<h2>Вся колода сыграна</h2><p>Новый круг перемешает карточки и добавит новые из общего пула.</p></div>`;
+    controls = btn("Перемешать колоду", "restart-game", "primary wide");
+  } else if (game.kind === "prediction" && phase === 1) {
+    body = `<div class="card-back"><span>🔮</span><h2>Передайте телефон</h2><p>Прогноз спрятан. Теперь ваш человек отвечает.</p></div>`;
+    controls = btn(
+      "Телефон у меня · открыть вопрос",
+      "game-phase",
+      "primary wide",
+      'data-phase="2"',
+    );
+  } else {
+    body = `<div class="table-card"><span class="card-suit">${box.emoji}</span><span class="card-number">${index + 1} / ${game.order.length}</span><p>${esc(text)}</p><span class="card-suit bottom">${box.emoji}</span></div>`;
+    if (game.kind === "prediction") {
+      if (phase === 0) {
+        body += `<form id="prediction-form"><label>Как, по-вашему, ответит ваш человек?<textarea name="prediction" maxlength="500" required placeholder="Мой прогноз…"></textarea></label><button class="btn primary wide" type="submit">Спрятать прогноз и передать телефон</button></form>`;
+      } else if (phase === 2) {
+        body +=
+          '<p class="game-instruction">Ответьте вслух, прежде чем смотреть прогноз.</p>';
+        controls = btn(
+          "Показать прогноз",
+          "game-phase",
+          "primary wide",
+          'data-phase="3"',
+        );
+      } else {
+        body += `<div class="prediction-reveal"><span>Ваш прогноз</span><p>${esc(game.prediction)}</p></div>`;
+        controls = `<div class="row">${btn("Совпало!", "game-hit", "primary")}${btn("Узнали новое", "game-miss", "soft")}</div>`;
+      }
+    } else if (game.kind === "mime") {
+      if (phase === 0)
+        controls = btn("Начать 45 секунд", "mime-start", "primary wide");
+      else if (phase === 1) {
+        body += `<div class="game-timer" id="game-timer">45</div><p class="game-instruction">Экран видит только исполнитель. Показывайте без слов!</p>`;
+        controls = `<div class="row">${btn("Угадали!", "game-hit", "primary")}${btn("Пропустить", "game-miss", "soft")}</div>`;
+        gameTimer = setInterval(() => {
+          const left = Math.max(
+            0,
+            Math.ceil((game.deadline - Date.now()) / 1000),
+          );
+          const timer = document.querySelector("#game-timer");
+          if (!timer) {
+            clearInterval(gameTimer);
+            return;
+          }
+          timer.textContent = left;
+          if (!left) {
+            clearInterval(gameTimer);
+            game.phase = 2;
+            gameView();
+          }
+        }, 200);
+      } else {
+        body +=
+          '<p class="game-instruction">Время вышло. Поменяйтесь ролями!</p>';
+        controls = `<div class="row">${btn("Успели угадать", "game-hit", "primary")}${btn("Следующая", "game-miss", "soft")}</div>`;
+      }
+    } else {
+      if (game.kind === "riddles")
+        body += `<details class="riddle-answer"><summary>Разгадка · только для ведущего</summary><p>${esc(item.answer)}</p></details>`;
+      if (game.kind === "echo")
+        body += `<p class="game-instruction">${phase === 0 ? "Ответьте так, как ответил бы ваш человек. Затем передайте телефон." : "Теперь расскажите свой настоящий ответ. Что совпало, а что удивило?"}</p>`;
+      controls =
+        game.kind === "echo" && phase === 0
+          ? btn(
+              "Передать телефон",
+              "game-phase",
+              "primary wide",
+              'data-phase="1"',
+            )
+          : btn("Следующая карточка →", "next-question", "primary wide");
+    }
+  }
+  const secret =
+    (game.kind === "prediction" && phase === 1) ||
+    (game.kind === "mime" && !done);
+  peer?.publishGame({
+    title: box.title,
+    text: done
+      ? "Колода закончилась"
+      : secret
+        ? "Ход на телефоне. Ответ скрыт от общего экрана."
+        : text,
+    progress: done ? "Новый круг?" : `${index + 1} / ${game.order.length}`,
+    kind: game.kind,
+    controller: userId,
+  });
   sheet(
-    `<span class="eyebrow">${esc(gameNames[game.kind])}</span><h2>${done ? "Колода закончилась" : "Ваш ход"}</h2>${done ? "<p>Все карточки сыграны. Новый круг перемешает колоду и добавит новые карточки из пула.</p>" : `<div class="question-card"><span>${index + 1} / ${game.order.length}</span><p>${esc(typeof item === "object" ? item.title : item)}</p></div>${game.kind === "riddles" ? `<p class="muted">Передайте экран ведущему. Он читает разгадку и отвечает только «да», «нет» или «неважно». Затем спрячьте ответ и читайте историю вместе.</p><details><summary>Разгадка · только для ведущего</summary><p>${esc(item.answer)}</p></details>` : '<p class="muted">Отвечайте по очереди. Любую карточку можно пропустить без объяснений.</p>'}`}${btn(done ? "Перемешать новую колоду" : "Следующая карточка →", done ? "restart-game" : "next-question", "primary wide")}`,
+    `<div class="board-game felt-${box.color}"><header class="table-heading"><span class="eyebrow">${box.subtitle}</span><h2>${box.title}</h2>${game.attempts ? `<span class="score-chip">${game.score} / ${game.attempts} совпадений</span>` : ""}</header>${body}<div class="game-controls">${controls}${!done && !controls.includes('data-action="next-question"') ? btn("Пропустить карточку", "next-question", "text wide") : ""}</div><details class="game-rules"><summary>Как играть</summary><p>${box.rule}</p><p>Вопросы и правда — один общий пул. Любой ход можно пропустить.</p></details></div>`,
   );
 }
 function tasksSheet() {
   sheet(
-    `<h2>Наши карточки</h2><p class="muted">Подготовьте заранее. Вопросы появятся в разговорах и правде, действия — в «Правде или действии». Существующая колода сохраняется до конца круга.</p><form id="task-form"><label>Тип<select name="kind"><option value="question">Вопрос</option><option value="truth">Правда</option><option value="dare">Действие</option></select></label><label>Текст<input name="title" maxlength="160" required placeholder="Что ты давно хотел попробовать?"></label><button class="btn primary" type="submit">Добавить в пул</button></form><div class="task-list">${store.data.customTasks
+    `<h2>Наши карточки</h2><p class="muted">Подготовьте заранее. Вопросы появятся в разговорах и правде, действия — в «Правде или действии». Существующая колода сохраняется до конца круга.</p><form id="task-form"><label>Тип<select name="kind"><option value="question">Вопрос</option><option value="dare">Действие</option></select></label><label>Текст<input name="title" maxlength="160" required placeholder="Что ты давно хотел попробовать?"></label><button class="btn primary" type="submit">Добавить в пул</button></form><div class="task-list">${store.data.customTasks
       .filter((t) => !t.deletedAt)
       .map(
         (t) =>
-          `<article class="saved-plan"><div><span class="muted">${{ question: "Вопрос", truth: "Правда", dare: "Действие" }[t.kind] || "Действие"}</span><h3>${esc(t.title)}</h3></div>${btn("Удалить", "delete-task", "text", `data-id="${esc(t.id)}"`)}</article>`,
+          `<article class="saved-plan"><div><span class="muted">${{ question: "Вопрос", truth: "Вопрос", dare: "Действие" }[t.kind] || "Действие"}</span><h3>${esc(t.title)}</h3></div>${btn("Удалить", "delete-task", "text", `data-id="${esc(t.id)}"`)}</article>`,
       )
       .join("")}</div>`,
   );
 }
-let swipeDeck = [];
+let swipeSeen = [],
+  swipeDeck = [],
+  swipeMode = "discover",
+  swipeBusy = false;
+function prepareSwipe(random = false) {
+  const available = store.ideas.filter(
+    (i) => swipeMode !== "plan" || !state.draft.includes(i.id),
+  );
+  const recent = (i) =>
+    Math.max(
+      0,
+      ...store.data.reactions
+        .filter(
+          (r) =>
+            r.ideaId === i.id &&
+            !r.deletedAt &&
+            ["like", "favorite"].includes(r.reaction),
+        )
+        .map((r) => r.updatedAt),
+    );
+  const saved = store.data.plans.find(
+    (p) =>
+      p.discoveryOwner === userId &&
+      p.discoveryMode === swipeMode &&
+      !p.deletedAt,
+  );
+  if (!random && saved?.remaining?.length) {
+    const ids = new Set(available.map((i) => i.id));
+    swipeSeen = saved.seen || [];
+    const fresh = available
+      .filter(
+        (i) => !saved.remaining.includes(i.id) && !swipeSeen.includes(i.id),
+      )
+      .map((i) => i.id);
+    swipeDeck = fresh.concat(saved.remaining.filter((id) => ids.has(id)));
+    return;
+  }
+  swipeSeen = [];
+  swipeDeck = (
+    random
+      ? shuffle(available)
+      : available
+          .filter((i) => preference(store, i))
+          .sort((a, b) => recent(b) - recent(a))
+          .concat(shuffle(available.filter((i) => !preference(store, i))))
+  ).map((i) => i.id);
+}
 function swipeView() {
   swipeDeck = swipeDeck.filter(
-    (id) => ideaById(id) && !state.draft.includes(id),
+    (id) => ideaById(id) && (swipeMode !== "plan" || !state.draft.includes(id)),
   );
+  if (!swipeDeck.length) prepareSwipe(true);
   const i = ideaById(swipeDeck[0]);
   sheet(
-    i
-      ? `<h2>Из ваших сердечек</h2><p class="muted">Вправо — в план, влево — следующая. Сердечки сохраняются.</p><div id="swipe-card" data-id="${esc(i.id)}">${art(i)}<h3>${esc(i.title)}</h3><p>${esc(i.description)}</p><span>${duration(i.duration)} · ${esc(i.location)}</span></div><div class="row">${btn("← Дальше", "swipe-next", "soft")}${btn("В план →", "swipe-add", "primary", `data-id="${esc(i.id)}"`)}</div><p class="muted">Осталось ${swipeDeck.length}</p>`
-      : `<h2>Всё посмотрели</h2><p>Лайкните больше идей или продолжите подбор в рекомендациях.</p>${btn("Вернуться к плану", "close", "primary")}`,
+    `<div class="discover-head"><span class="eyebrow">DISCOVER · ДЛЯ ДВОИХ</span><h2>${swipeMode === "plan" ? "Выбираем вечер" : "Открываем новое"}</h2><div class="row">${btn("Открытия", "swipe-mode", swipeMode === "discover" ? "primary" : "soft", 'data-id="discover"')}${btn("В план", "swipe-mode", swipeMode === "plan" ? "primary" : "soft", 'data-id="plan"')}${btn(icon("shuffle"), "swipe-random", "soft", 'aria-label="Перемешать идеи"')}</div></div>${i ? `<div class="swipe-stack"><div id="swipe-card" class="bond-${affinity(store, i).level}" data-id="${esc(i.id)}">${art(i)}<div class="swipe-copy">${affinity(store, i).html}<h3>${esc(i.title)}</h3><p>${esc(i.description)}</p><span>${duration(i.duration)} · ${esc(i.location)}</span></div></div></div><p class="muted center">Влево — дальше · вправо — ${swipeMode === "plan" ? "в план" : "нравится"}</p><div class="swipe-actions">${btn(icon("close"), "swipe-next", "soft", 'aria-label="Следующая идея"')}${btn(icon("heart"), "swipe-yes", "primary", `data-id="${esc(i.id)}" aria-label="${swipeMode === "plan" ? "Добавить в план" : "Нравится"}"`)}${btn(icon("plus"), "swipe-add", "lavender", `data-id="${esc(i.id)}" aria-label="В план"`)}</div>` : "<p>Все идеи уже в вашем плане. Переключитесь в открытия.</p>"}`,
   );
+}
+async function persistSwipe() {
+  await store.save("plans", {
+    id: `${roomId}:discover:${userId}:${swipeMode}`,
+    title: "Колода идей",
+    items: [],
+    discoveryOwner: userId,
+    discoveryMode: swipeMode,
+    remaining: [...swipeDeck],
+    seen: [...new Set(swipeSeen)].slice(-1500),
+  });
+}
+async function swipeAdvance(yes = false) {
+  if (swipeBusy) return;
+  swipeBusy = true;
+  const id = swipeDeck[0],
+    card = document.querySelector("#swipe-card");
+  try {
+    if (card) {
+      card.style.transition = "transform .18s ease,opacity .18s";
+      card.style.transform = `translateX(${yes ? 300 : -300}px) rotate(${yes ? 12 : -12}deg)`;
+      card.style.opacity = "0";
+    }
+    if (yes) {
+      if (swipeMode === "plan") await action("add-plan", { dataset: { id } });
+      else if (!["like", "favorite"].includes(store.reaction(id)))
+        await store.react(id, "like");
+    }
+    await new Promise((r) => setTimeout(r, 160));
+    swipeDeck.shift();
+    swipeSeen.push(id);
+    await persistSwipe();
+    if (
+      document.querySelector("#sheet").open &&
+      document.querySelector("#swipe-card") === card
+    )
+      swipeView();
+  } finally {
+    swipeBusy = false;
+  }
 }
 function confirmSheet(title, text, action, id = "") {
   sheet(
@@ -400,33 +795,29 @@ async function action(a, el) {
       render();
       break;
     case "swipe":
-      swipeDeck = recommendations(store, state.draft)
-        .filter((i) => preference(store, i))
-        .sort((a, b) => {
-          const recent = (id) =>
-            Math.max(
-              0,
-              ...store.data.reactions
-                .filter(
-                  (r) =>
-                    r.ideaId === id &&
-                    !r.deletedAt &&
-                    ["like", "favorite"].includes(r.reaction),
-                )
-                .map((r) => r.updatedAt),
-            );
-          return recent(b.id) - recent(a.id);
-        })
-        .map((i) => i.id);
+      swipeMode = state.tab === "build" ? "plan" : "discover";
+      prepareSwipe();
+      swipeView();
+      break;
+    case "swipe-mode":
+      swipeMode = id;
+      prepareSwipe();
+      swipeView();
+      break;
+    case "swipe-random":
+      prepareSwipe(true);
       swipeView();
       break;
     case "swipe-next":
-      swipeDeck.shift();
-      swipeView();
+      await swipeAdvance(false);
+      break;
+    case "swipe-yes":
+      await swipeAdvance(true);
       break;
     case "swipe-add":
       await action("add-plan", el);
-      swipeDeck.shift();
+      swipeSeen.push(swipeDeck.shift());
+      await persistSwipe();
       swipeView();
       break;
     case "surprise":
@@ -516,12 +907,38 @@ async function action(a, el) {
       startGame(id);
       break;
     case "restart-game":
-      game.order = shuffle(gamePool(game.kind));
+      game.order = sessionDeck(store, game.kind);
+      game.builtAt = Date.now();
+      game.markedIndex = -1;
       game.index = 0;
+      game.phase = 0;
+      game.score = 0;
+      game.attempts = 0;
       gameView();
       break;
+    case "game-phase":
+      game.phase = Number(el.dataset.phase);
+      gameView();
+      break;
+    case "mime-start":
+      game.phase = 1;
+      game.deadline = Date.now() + 45000;
+      gameView();
+      break;
+    case "game-hit":
+    case "game-miss":
+      game.attempts = (game.attempts || 0) + 1;
+      game.score = (game.score || 0) + (a === "game-hit" ? 1 : 0);
     case "next-question":
+      game.phase = 0;
+      game.prediction = "";
       game.index = (game.index || 0) + 1;
+      while (
+        game.index < game.order.length &&
+        (playedHistory(store)[cardKey(game.order[game.index])] || 0) >
+          game.builtAt
+      )
+        game.index++;
       gameView();
       break;
     case "tasks":
@@ -555,42 +972,91 @@ async function action(a, el) {
     }
     case "connection":
       sheet(
-        `<h2>Рядом, даже когда не рядом</h2><p><strong>${esc(state.status)}</strong></p><p>Пока второй человек не в сети, все изменения сохраняются здесь. Когда вы одновременно откроете комнату, приложение попробует объединить ваши данные.</p><p>Если связь не появляется, попробуйте другую сеть. Некоторые сети не разрешают прямое соединение. Можно передать резервную копию через раздел «Ваши данные».</p><h3>Только ваше</h3><p>Ссылка — ключ от комнаты. Отправляйте её только вашему человеку. Идеи не хранятся на сервере; служба соединения помогает устройствам найти друг друга. Аналитики и рекламы нет.</p><p>После очистки браузера откройте ту же ссылку вместе со вторым участником: его копия восстановит общие данные. Восстановить прежние имя и реакции можно выбором своего профиля ниже.</p>${store.users
-          .filter((u) => u.localUserId !== userId)
-          .map((u) =>
-            btn(
-              "Это я: " + esc(u.displayName),
-              "recover-user",
-              "soft wide",
-              `data-id="${esc(u.localUserId)}"`,
-            ),
-          )
-          .join("")}`,
+        `<h2>Ваша комната на двоих</h2><div class="pair-orbit">${store.users.map((u) => esc(u.avatar || "🪐")).join(" · ")}</div><p>${esc(state.status)}</p><p>Роли закреплены за участниками вашей комнаты. Новый телефон получает доступ только после подтверждения вторым человеком и сверки значков. При восстановлении прежние реакции и авторство остаются у той же роли.</p><p class="muted">Если оба устройства потеряют данные, восстановить их без сохранённой копии будет неоткуда. Для восстановления с партнёра один из прежних клиентов должен быть онлайн. Для входа нужна новая версия на обоих устройствах.</p>${btn("Исправить имена в комнате", "pair-names", "lavender wide")}`,
       );
       break;
-    case "recover-user":
-      confirmSheet(
-        "Восстановить свой профиль?",
-        "Выбирайте только свой прежний профиль. Реакции и авторство будут снова связаны с ним.",
-        "confirm-recover",
-        id,
+    case "pair-names": {
+      const me = store.users.find((u) => u.localUserId === userId),
+        other = store.users.find((u) => u.localUserId !== userId);
+      sheet(
+        `<h2>Как вас зовут?</h2><p class="muted">Меняются только имена. Роли, сердечки и авторство сохраняются.</p><form id="pair-names-form"><label>Вы<input name="me" maxlength="60" required value="${esc(me?.displayName || "")}"></label>${other ? `<label>Ваш человек<input name="partner" maxlength="60" required value="${esc(other.displayName)}"></label>` : ""}<button class="btn primary wide" type="submit">Сохранить имена</button></form>`,
       );
-      break;
-    case "confirm-recover": {
-      const previous = userId;
-      peer?.stop();
-      await store.remove("users", `${roomId}:${previous}`);
-      const entries = store.export().entries;
-      const oldDb = db;
-      userId = id;
-      localStorage.setItem(identityKey, id);
-      db = await new Database("vmeste-" + id).open();
-      await db.batch(entries);
-      oldDb.close();
-      closeSheet();
-      await enter(roomId);
       break;
     }
+    case "approve-pair":
+    case "deny-pair": {
+      const target = document.querySelector("#admission-target")?.value;
+      const resolve = approvalResolve;
+      approvalResolve = null;
+      approvalClient = null;
+      closeSheet();
+      resolve?.(a === "approve-pair" ? { target } : false);
+      break;
+    }
+    case "game-records":
+      party.showRecords();
+      break;
+    case "open-live-game":
+      party.open();
+      break;
+    case "screen-mode":
+      state.screenOnly = true;
+      state.screenFrame = peer?.lastGame;
+      render();
+      break;
+    case "client-mode":
+      state.screenOnly = false;
+      render();
+      break;
+    case "fullscreen":
+      if (!document.fullscreenElement)
+        await document.documentElement.requestFullscreen?.();
+      else await document.exitFullscreen?.();
+      break;
+    case "show-catalog":
+      document
+        .querySelector("#catalog")
+        ?.scrollIntoView({ behavior: "smooth" });
+      break;
+    case "rooms":
+      sheet(
+        `<h2>Мои комнаты</h2><div class="rooms-list">${savedRooms(identityKey)
+          .map(
+            (r) =>
+              `<button class="room-choice" data-action="switch-room" data-id="${esc(r.id)}"><span>${roomSymbols(r.id)}</span><strong>${esc(r.name || "Наша комната")}</strong><small>${r.viewer ? "Общий экран" : r.capacity === 10 ? "Компания · до 10" : "Для двоих"}</small></button>`,
+          )
+          .join(
+            "",
+          )}</div><div class="row">${btn("Создать комнату", "new-room", "primary")}${btn("По приглашению", "join", "soft")}</div>`,
+      );
+      break;
+    case "switch-room":
+      closeSheet();
+      await enter(id);
+      navigate("profile");
+      break;
+    case "new-room":
+      party.reset();
+      peer?.stop();
+      store = null;
+      roomId = null;
+      state.draft = [];
+      history.replaceState(null, "", location.pathname);
+      closeSheet();
+      render();
+      break;
+    case "confirm-pair-code":
+    case "decline-pair-code": {
+      const resolve = confirmCodeResolve;
+      confirmCodeResolve = null;
+      state.confirmCodePending = false;
+      resolve?.(a === "confirm-pair-code");
+      render();
+      break;
+    }
+    case "retry-pair":
+      peer?.restart();
+      break;
     case "leave":
       confirmSheet(
         "Выйти из комнаты?",
@@ -611,6 +1077,7 @@ async function action(a, el) {
       await action("confirm-leave", el);
       break;
     case "confirm-leave":
+      party.reset();
       peer?.stop();
       store = null;
       roomId = null;
@@ -655,6 +1122,12 @@ document.addEventListener("submit", async (e) => {
         await enter(
           roomId || crypto.randomUUID().replaceAll("-", ""),
           fields.name.trim(),
+          "🌷",
+          fresh,
+          {
+            capacity: Number(fields.capacity) || 2,
+            requestedMode: fields.entryMode || "player",
+          },
         );
         if (fresh) {
           navigate("profile");
@@ -698,13 +1171,10 @@ document.addEventListener("submit", async (e) => {
         if (!fields.title.trim()) throw Error("Добавьте название идеи");
         await store.save("ideas", {
           ...fields,
-          photo: undefined,
-          image: fields.removeImage
-            ? ""
-            : await readPhoto(
-                form.elements.photo.files[0],
-                ideaById(form.dataset.id)?.image,
-              ),
+          image:
+            fields.visualMode === "emoji"
+              ? ""
+              : fields.artwork || "./assets/magic.svg",
           id: form.dataset.id || undefined,
           title: fields.title.trim(),
           duration: Number(fields.duration) || 30,
@@ -732,6 +1202,31 @@ document.addEventListener("submit", async (e) => {
         closeSheet();
         render();
         break;
+      case "pair-names-form": {
+        if (
+          !fields.me.trim() ||
+          (fields.partner != null && !fields.partner.trim())
+        )
+          throw Error("Заполните имена");
+        const other = store.users.find((u) => u.localUserId !== userId);
+        await store.save("users", {
+          id: `${roomId}:${userId}`,
+          displayName: fields.me.trim(),
+        });
+        if (other)
+          await store.save("users", {
+            id: other.id,
+            displayName: fields.partner.trim(),
+          });
+        roomAuth.record.roster = roomAuth.record.roster.map((r) => ({
+          ...r,
+          name: r.id === userId ? fields.me.trim() : fields.partner.trim(),
+        }));
+        await roomAuth.save();
+        closeSheet();
+        render();
+        break;
+      }
       case "profile-form":
         if (!fields.name.trim()) throw Error("Напишите ваше имя");
         await store.save("users", {
@@ -753,6 +1248,12 @@ document.addEventListener("submit", async (e) => {
         closeSheet();
         render();
         toast("Вечер сохранён ♡");
+        break;
+      case "prediction-form":
+        if (!fields.prediction.trim()) throw Error("Запишите прогноз");
+        game.prediction = fields.prediction.trim();
+        game.phase = 1;
+        gameView();
         break;
       case "task-form":
         if (!fields.title.trim()) throw Error("Напишите задание");
@@ -798,6 +1299,11 @@ document.addEventListener("change", async (e) => {
 });
 document.querySelector("#sheet").addEventListener("close", () => {
   document.body.classList.remove("modal-open");
+  if (approvalResolve) {
+    const resolve = approvalResolve;
+    approvalResolve = null;
+    resolve(false);
+  }
   if (store) render();
 });
 document.querySelector("#sheet").addEventListener("click", (e) => {
@@ -869,13 +1375,21 @@ window.addEventListener("beforeinstallprompt", (e) => {
 });
 window.addEventListener("pagehide", () => peer?.stop());
 window.addEventListener("pageshow", (e) => {
-  if (e.persisted && store) peer = new RoomPeer(store, setStatus);
+  if (e.persisted && store) peer = new RoomPeer(store, setStatus, roomAuth);
 });
 try {
   db = await new Database("vmeste-" + userId).open();
   if (roomId) {
     const users = await db.all("users", roomId);
-    if (users.some((u) => u.localUserId === userId && !u.deletedAt))
+    const storedAuth = (await db.all("meta", roomId)).find(
+      (r) => r.id === `${roomId}:auth`,
+    );
+    if (
+      storedAuth ||
+      users.some(
+        (u) => u.localUserId === userId && !u.deletedAt && !u.provisional,
+      )
+    )
       await enter(roomId);
     else render();
   } else render();
@@ -884,24 +1398,6 @@ try {
     '<main class="onboarding"><h1>Не получилось открыть хранилище</h1><p>Разрешите сайту сохранять данные и обновите страницу. Ваши идеи не будут потеряны из-за несохранённых изменений.</p><button class="btn primary" onclick="location.reload()">Попробовать снова</button></main>';
 }
 
-async function readPhoto(file, previous = "") {
-  if (!file) return previous;
-  if (!/^image\/(jpeg|png|webp)$/.test(file.type) || file.size > 10_000_000)
-    throw Error("Выберите JPG, PNG или WebP до 10 МБ");
-  const bitmap = await createImageBitmap(file);
-  const canvas = document.createElement("canvas"),
-    ratio = Math.min(1, 480 / Math.max(bitmap.width, bitmap.height));
-  canvas.width = Math.max(1, Math.round(bitmap.width * ratio));
-  canvas.height = Math.max(1, Math.round(bitmap.height * ratio));
-  canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-  bitmap.close();
-  let image;
-  for (const quality of [0.8, 0.6, 0.4, 0.2]) {
-    image = canvas.toDataURL("image/jpeg", quality);
-    if (image.length < 48000) return image;
-  }
-  throw Error("Картинка слишком сложная. Выберите более простое изображение");
-}
 let press,
   suppressLike = false,
   swipeTouch;
@@ -935,6 +1431,13 @@ document.addEventListener("pointerdown", (e) => {
   if (card) swipeTouch = { x: e.clientX, y: e.clientY, id: card.dataset.id };
 });
 document.addEventListener("pointermove", (e) => {
+  if (swipeTouch) {
+    const card = document.querySelector("#swipe-card");
+    if (card) {
+      const delta = e.clientX - swipeTouch.x;
+      card.style.transform = `translateX(${delta}px) rotate(${delta / 22}deg)`;
+    }
+  }
   if (press && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 12) {
     clearTimeout(press.timer);
     press = null;
@@ -953,10 +1456,7 @@ document.addEventListener("pointerup", async (e) => {
       Math.abs(e.clientX - t.x) > Math.abs(e.clientY - t.y) * 1.3
     ) {
       try {
-        if (e.clientX > t.x)
-          await action("add-plan", { dataset: { id: t.id } });
-        swipeDeck.shift();
-        swipeView();
+        await swipeAdvance(e.clientX > t.x);
       } catch (err) {
         toast(err.message);
       }
@@ -983,29 +1483,57 @@ document.addEventListener(
   },
   true,
 );
-let loadingRecommendations = false;
-window.addEventListener(
+document.addEventListener(
   "scroll",
-  () => {
-    const more = document.querySelector("#recommendation-more");
-    if (
-      !loadingRecommendations &&
-      state.tab === "build" &&
-      more &&
-      more.getBoundingClientRect().top < innerHeight + 200
-    ) {
-      loadingRecommendations = true;
-      state.suggestLimit = (state.suggestLimit || 12) + 12;
-      render();
-      requestAnimationFrame(() => (loadingRecommendations = false));
+  (e) => {
+    const feed = e.target;
+    if (feed?.id !== "recommendation-feed" || feed.dataset.loading) return;
+    if (feed.scrollLeft + feed.clientWidth < feed.scrollWidth - 180) return;
+    feed.dataset.loading = "1";
+    const start = state.feedStart || 0,
+      count = state.feedCount || 10;
+    feed.insertAdjacentHTML("beforeend", feedBatch(state, start + count, 10));
+    state.feedCount = count + 10;
+    if (state.feedCount > 40) {
+      const width = feed.scrollWidth;
+      for (let i = 0; i < 10; i++) feed.firstElementChild?.remove();
+      state.feedStart = start + 10;
+      state.feedCount -= 10;
+      feed.scrollLeft -= width - feed.scrollWidth;
     }
+    requestAnimationFrame(() => delete feed.dataset.loading);
   },
-  { passive: true },
+  true,
 );
+window.addEventListener("keydown", (e) => {
+  if (
+    document.querySelector("#swipe-card") &&
+    !e.target.matches("input,textarea")
+  ) {
+    if (e.key === "ArrowLeft") {
+      e.preventDefault();
+      swipeAdvance(false);
+    }
+    if (e.key === "ArrowRight") {
+      e.preventDefault();
+      swipeAdvance(true);
+    }
+  }
+});
 
 window.vmesteBeforeUpdate = async () => {
   if (store) {
+    await historyQueue;
     await store.queue;
     await persistDraft();
   }
 };
+
+window.addEventListener("vmeste-game-view", (e) => {
+  state.screenFrame = e.detail;
+  if (store?.authViewer || state.screenOnly) {
+    const live = document.querySelector(".projector-live");
+    if (live) live.innerHTML = partyScreen(e.detail);
+    else render();
+  }
+});

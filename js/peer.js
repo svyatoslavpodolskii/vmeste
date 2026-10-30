@@ -1,197 +1,442 @@
-import { Sync } from "./sync.js";
+﻿import { Sync } from "./sync.js";
+import { keyId } from "./auth.js";
 export class RoomPeer {
-  constructor(store, onStatus) {
+  constructor(store, onStatus, auth) {
     this.store = store;
     this.status = onStatus;
+    this.auth = auth;
+    this.sessions = new Map();
     this.stopped = false;
-    this.sync = new Sync(store, (m) => this.send(m), onStatus);
     this.change = (e) => {
-      if (e.detail.local) this.sync.changed(e.detail.entries);
+      if (e.detail.local)
+        for (const s of this.players()) s.sync.changed(e.detail.entries);
     };
     store.addEventListener("change", this.change);
     this.resume = () => {
       if (
         !this.stopped &&
-        !this.connection?.open &&
+        !this.peer?.open &&
         document.visibilityState !== "hidden"
       )
         this.restart();
     };
     this.offline = () => {
       this.status("Офлайн");
-      this.connection?.close();
+      for (const s of this.sessions.values()) s.c.close();
     };
     window.addEventListener("online", this.resume);
     window.addEventListener("offline", this.offline);
     document.addEventListener("visibilitychange", this.resume);
     this.start();
   }
+  players() {
+    return [...this.sessions.values()].filter(
+      (s) =>
+        s.admission?.authorized &&
+        !s.admission.remoteViewer &&
+        !this.store.authViewer &&
+        s.c.open,
+    );
+  }
+  onlineMembers() {
+    return new Set([
+      this.store.userId,
+      ...(!this.isHub ? this.store.authOnline || [] : []),
+      ...[...this.sessions.values()]
+        .filter((s) => s.admission?.authorized && !s.admission.remoteViewer)
+        .map((s) => s.admission.remoteMemberId || s.admission.remote?.memberId),
+    ]);
+  }
   async start() {
-    const digest = await crypto.subtle.digest(
-      "SHA-256",
-      new TextEncoder().encode(this.store.roomId),
+    const digest = new Uint8Array(
+      await crypto.subtle.digest(
+        "SHA-256",
+        new TextEncoder().encode(this.store.roomId),
+      ),
     );
     this.prefix =
       "vmeste-" +
-      Array.from(new Uint8Array(digest))
-        .map((x) => x.toString(16).padStart(2, "0"))
+      [...digest]
+        .map((n) => n.toString(16).padStart(2, "0"))
         .join("")
-        .slice(0, 40);
+        .slice(0, 32);
     if (this.stopped) return;
-    this.claim("a");
+    this.claim(!!this.auth?.record.established && !this.store.authViewer);
     this.timer = setInterval(() => {
       if (!navigator.onLine) {
         this.status("Офлайн");
         return;
       }
-      if (this.connection?.open && Date.now() - this.lastSeen > 25000) {
-        this.connection.close();
-        this.connection = null;
-        this.connecting = false;
+      for (const s of this.sessions.values()) {
+        if (s.c.open && Date.now() - s.lastSeen > 30000) {
+          s.c.close();
+          continue;
+        }
+        if (s.c.open) {
+          s.c.send({ type: "auth-ping" });
+          if (
+            s.admission?.authorized &&
+            !s.admission.remoteViewer &&
+            !this.store.authViewer
+          )
+            s.sync.hello();
+        }
       }
-      if (!this.peer || this.peer.destroyed) {
-        this.claim("a");
-        return;
-      }
+      if (!this.peer || this.peer.destroyed) return this.restart();
       if (this.peer.disconnected) {
         try {
           this.peer.reconnect();
         } catch {
           this.restart();
         }
-      } else if (
-        this.slot === "b" &&
-        !this.connection?.open &&
-        this.peer.open &&
-        !this.connecting
-      )
-        this.connect();
-      if (this.connection?.open) this.sync.hello();
-    }, 8000);
+      }
+      if (!this.isHub && !this.sessions.size && this.peer.open) {
+        if (this.auth?.record.established && !this.store.authViewer)
+          this.restart();
+        else this.connect();
+      }
+    }, 6000);
   }
-  claim(slot) {
-    if (this.stopped) return;
-    if (!navigator.onLine) {
-      this.status("Офлайн");
-      return;
-    }
+  claim(hub) {
+    if (this.stopped || !navigator.onLine) return;
     if (!window.Peer) {
       this.status("Соединение пока недоступно");
       return;
     }
-    this.slot = slot;
-    this.status("Ждём второго");
-    const peer = (this.peer = new window.Peer(`${this.prefix}-${slot}`, {
-      debug: 0,
-    }));
+    this.isHub = hub;
+    this.status(
+      this.store.authEstablished
+        ? "Ждём участников"
+        : "Ищем участника для подтверждения…",
+    );
+    const peer = (this.peer = new window.Peer(
+      this.prefix +
+        (hub
+          ? "-hub"
+          : "-d-" + crypto.randomUUID().replaceAll("-", "").slice(0, 16)),
+      { debug: 0 },
+    ));
     peer.on("open", () => {
       if (peer !== this.peer) return;
-      if (slot === "b") this.connect();
+      if (!hub) this.connect();
     });
     peer.on("connection", (c) => {
       if (
-        c.peer !== `${this.prefix}-${slot === "a" ? "b" : "a"}` ||
-        this.connection?.open
+        !hub ||
+        !c.peer.startsWith(this.prefix + "-d-") ||
+        this.sessions.size >= 24
       ) {
         c.close();
         return;
       }
       this.bind(c);
     });
-    peer.on("disconnected", () =>
-      this.status(navigator.onLine ? "Восстанавливаем связь…" : "Офлайн"),
-    );
+    peer.on("disconnected", () => {
+      if (peer === this.peer)
+        this.status(navigator.onLine ? "Восстанавливаем связь…" : "Офлайн");
+    });
     peer.on("error", (err) => {
       if (peer !== this.peer || this.stopped) return;
-      if (err.type === "unavailable-id") {
+      if (err.type === "unavailable-id" && hub) {
         peer.destroy();
-        if (slot === "a") this.claim("b");
-        else {
-          this.status("Комната уже открыта на двух устройствах");
-          clearTimeout(this.retry);
-          this.retry = setTimeout(() => this.restart(), 12000);
-        }
+        this.claim(false);
       } else if (err.type === "peer-unavailable") {
         this.connecting = false;
-        this.status("Ждём второго");
+        this.status("Нужен один из участников онлайн");
       } else {
-        this.status("Не удаётся связаться. Данные сохранены");
-        if (!this.connection?.open) {
-          clearTimeout(this.retry);
-          this.retry = setTimeout(() => this.restart(), 10000);
-        }
+        this.connecting = false;
+        this.status("Связь прервалась. Данные сохранены");
       }
     });
   }
   connect() {
-    if (this.connecting || this.connection?.open) return;
+    if (this.connecting || this.sessions.size || !this.peer?.open) return;
     this.connecting = true;
     this.bind(
-      this.peer.connect(`${this.prefix}-a`, {
+      this.peer.connect(this.prefix + "-hub", {
         reliable: true,
         serialization: "json",
       }),
     );
   }
   bind(c) {
-    this.connection = c;
+    const session = { c, lastSeen: Date.now() };
+    this.sessions.set(c.peer, session);
     const timeout = setTimeout(() => {
       if (!c.open) {
         c.close();
+        this.sessions.delete(c.peer);
         this.connecting = false;
       }
-    }, 7000);
+    }, 9000);
+    session.sync = new Sync(
+      this.store,
+      (m) => {
+        if (
+          session.admission?.authorized &&
+          !session.admission.remoteViewer &&
+          !this.store.authViewer &&
+          c.open
+        )
+          c.send(m);
+      },
+      this.status,
+    );
     c.on("open", () => {
       clearTimeout(timeout);
       this.connecting = false;
-      this.lastSeen = Date.now();
-      this.status("Вы вдвоём");
-      this.sync.hello();
+      session.lastSeen = Date.now();
+      this.status("Подтверждаем участника…");
+      if (!this.auth) {
+        c.close();
+        return;
+      }
+      session.admission = this.auth.attach(c, this.isHub ? "a" : "b", () => {
+        this.connection = c;
+        this.admission = session.admission;
+        this.status(
+          this.store.authViewer
+            ? "Экран подключён"
+            : this.store.authCapacity > 2
+              ? "Компания на связи"
+              : "Вы вдвоём",
+        );
+        if (!session.admission.remoteViewer && !this.store.authViewer)
+          session.sync.hello();
+        if (this.isHub) this.shareRoster();
+        if (this.lastGame && session.admission.remoteViewer)
+          c.send({ type: "game-view", frame: this.lastGame });
+      });
     });
-    c.on("data", (m) => {
-      this.lastSeen = Date.now();
-      this.sync.receive(m);
+    c.on("data", async (m) => {
+      session.lastSeen = Date.now();
+      if (m?.type?.startsWith("auth-")) {
+        session.admission?.receive(m);
+        return;
+      }
+      if (!session.admission?.authorized) return;
+      if (m?.type === "room-roster" && !this.isHub && !this.store.authViewer) {
+        if (
+          !validRoster(m.roster) ||
+          !m.roster.some((r) => r.id === this.store.userId)
+        )
+          return;
+        this.auth.record.roster = m.roster;
+        this.auth.record.displays = Array.isArray(m.displays)
+          ? m.displays.slice(0, 10)
+          : [];
+        this.auth.record.capacity = m.capacity === 10 ? 10 : 2;
+        this.store.authOnline = Array.isArray(m.online) ? m.online : [];
+        await this.auth.save();
+        this.store.dispatchEvent(
+          new CustomEvent("change", { detail: { entries: [], local: false } }),
+        );
+        return;
+      }
+      if (
+        m?.type === "play-input" &&
+        this.isHub &&
+        !session.admission.remoteViewer
+      ) {
+        this.routeInput(
+          session.admission.remoteMemberId || session.admission.remote.memberId,
+          m.input,
+        );
+        return;
+      }
+      if (
+        m?.type === "play-command" &&
+        !this.isHub &&
+        !this.store.authViewer &&
+        JSON.stringify(m).length < 16000
+      ) {
+        window.dispatchEvent(
+          new CustomEvent("vmeste-game-input", {
+            detail: { sender: m.sender, input: m.input },
+          }),
+        );
+        return;
+      }
+      if (m?.type === "play-private" && !session.admission.remoteViewer) {
+        if (this.isHub) {
+          if (this.lastGame?.controllerClient === c.peer)
+            this.routePrivate(m.target, m.payload);
+        } else if (!this.store.authViewer)
+          window.dispatchEvent(
+            new CustomEvent("vmeste-game-private", { detail: m.payload }),
+          );
+        return;
+      }
+      if (m?.type === "game-view") {
+        if (session.admission.remoteViewer || !validFrame(m.frame)) return;
+        if (this.isHub) {
+          m.frame.controller =
+            session.admission.remoteMemberId ||
+            session.admission.remote.memberId;
+          m.frame.controllerClient = c.peer;
+        }
+        this.lastGame = m.frame;
+        window.dispatchEvent(
+          new CustomEvent("vmeste-game-view", { detail: m.frame }),
+        );
+        if (this.isHub)
+          for (const other of this.sessions.values())
+            if (
+              other !== session &&
+              other.admission?.authorized &&
+              other.c.open
+            )
+              other.c.send(m);
+        return;
+      }
+      if (this.store.authViewer || session.admission.remoteViewer) return;
+      await session.sync.receive(m);
+      if (
+        this.isHub &&
+        m?.type === "records" &&
+        Array.isArray(m.entries) &&
+        m.entries.length <= 100
+      )
+        for (const other of this.players())
+          if (other !== session) other.c.send(m);
     });
-    c.on("close", () => {
+    const closed = () => {
       clearTimeout(timeout);
       this.connecting = false;
+      this.sessions.delete(c.peer);
+      this.auth?.pending.delete(c.peer);
+      this.auth?.options.onPendingClosed?.(c.peer);
       if (this.connection === c) {
         this.connection = null;
-        this.status(navigator.onLine ? "Ждём второго" : "Офлайн");
+        this.admission = null;
       }
-    });
+      if (this.isHub) this.shareRoster();
+      if (!this.sessions.size)
+        this.status(navigator.onLine ? "Ждём участников" : "Офлайн");
+    };
+    c.on("close", closed);
     c.on("error", () => {
-      clearTimeout(timeout);
-      this.connecting = false;
       c.close();
+      closed();
     });
   }
-  send(msg) {
-    if (this.connection?.open)
-      try {
-        this.connection.send(msg);
-      } catch {
-        this.status("Восстанавливаем связь…");
-      }
+  shareRoster() {
+    const msg = {
+      type: "room-roster",
+      roster: this.auth.record.roster,
+      capacity: this.auth.record.capacity,
+      displays: this.auth.record.displays,
+      online: [...this.onlineMembers()],
+    };
+    for (const s of this.players()) s.c.send(msg);
+  }
+  publishGame(frame) {
+    if (!validFrame(frame) || this.store.authViewer) return;
+    frame = {
+      ...frame,
+      controller: this.store.userId,
+      controllerClient: this.peer?.id,
+    };
+    this.lastGame = frame;
+    for (const s of this.sessions.values())
+      if (s.admission?.authorized && s.c.open)
+        s.c.send({ type: "game-view", frame });
+  }
+  sendInput(input) {
+    if (!input || JSON.stringify(input).length > 14000 || this.store.authViewer)
+      return;
+    if (this.isHub) this.routeInput(this.store.userId, input);
+    else
+      for (const s of this.players()) s.c.send({ type: "play-input", input });
+  }
+  routeInput(sender, input) {
+    if (
+      !input ||
+      JSON.stringify(input).length > 14000 ||
+      input.round !== this.lastGame?.round
+    )
+      return;
+    const msg = { type: "play-command", sender, input };
+    if (this.lastGame?.controllerClient === this.peer?.id)
+      window.dispatchEvent(
+        new CustomEvent("vmeste-game-input", { detail: { sender, input } }),
+      );
+    else {
+      const target = this.sessions.get(this.lastGame?.controllerClient);
+      if (target?.admission?.authorized && !target.admission.remoteViewer)
+        target.c.send(msg);
+    }
+  }
+  sendPrivate(target, payload) {
+    if (
+      !payload ||
+      JSON.stringify(payload).length > 5000 ||
+      this.store.authViewer
+    )
+      return;
+    if (this.isHub) this.routePrivate(target, payload);
+    else
+      for (const s of this.players())
+        s.c.send({ type: "play-private", target, payload });
+  }
+  routePrivate(target, payload) {
+    if (!payload || JSON.stringify(payload).length > 5000) return;
+    if (target === this.store.userId)
+      window.dispatchEvent(
+        new CustomEvent("vmeste-game-private", { detail: payload }),
+      );
+    for (const s of this.players())
+      if (
+        (s.admission.remoteMemberId || s.admission.remote?.memberId) === target
+      )
+        s.c.send({ type: "play-private", target, payload });
   }
   restart() {
     if (this.stopped || !this.prefix) return;
-    clearTimeout(this.retry);
-    this.connection?.close();
+    for (const s of this.sessions.values()) s.c.close();
+    this.sessions.clear();
     this.peer?.destroy();
     this.connection = null;
+    this.admission = null;
     this.connecting = false;
-    this.claim("a");
+    this.claim(!!this.auth?.record.established && !this.store.authViewer);
   }
   stop() {
     this.stopped = true;
     clearInterval(this.timer);
-    clearTimeout(this.retry);
-    this.connection?.close();
+    for (const s of this.sessions.values()) s.c.close();
+    this.sessions.clear();
     this.peer?.destroy();
     this.store.removeEventListener("change", this.change);
     window.removeEventListener("online", this.resume);
     window.removeEventListener("offline", this.offline);
     document.removeEventListener("visibilitychange", this.resume);
   }
+}
+function validRoster(roster) {
+  return (
+    Array.isArray(roster) &&
+    roster.length > 0 &&
+    roster.length <= 10 &&
+    new Set(roster.map((r) => r.id)).size === roster.length &&
+    roster.every(
+      (r) =>
+        typeof r.id === "string" &&
+        r.id.length <= 100 &&
+        typeof r.name === "string" &&
+        r.name.length <= 60 &&
+        (!r.keys || (Array.isArray(r.keys) && r.keys.length <= 10)),
+    )
+  );
+}
+function validFrame(frame) {
+  return (
+    frame &&
+    typeof frame === "object" &&
+    JSON.stringify(frame).length < 48000 &&
+    typeof frame.title === "string" &&
+    typeof frame.text === "string" &&
+    frame.title.length < 160 &&
+    frame.text.length < 2000
+  );
 }
