@@ -5,7 +5,7 @@ import { Database } from "../js/db.js";
 import { Store } from "../js/store.js";
 import { Sync, metadata, delta, compare, validRecord } from "../js/sync.js";
 import { builtinIdeas } from "../data/ideas.js";
-import { surprise, reorder } from "../js/plans.js";
+import { surprise, reorder, preference, recommendations } from "../js/plans.js";
 const room = "test-room-with-very-long-random-id";
 async function make(user) {
   return new Store(
@@ -14,9 +14,12 @@ async function make(user) {
     user,
   ).load();
 }
-test("100 unique, complete built-in ideas; compatible generated evenings", () => {
-  assert.equal(builtinIdeas.length, 100);
-  assert.equal(new Set(builtinIdeas.map((i) => i.id)).size, 100);
+test("158 unique, complete built-in ideas; compatible generated evenings", () => {
+  assert.ok(builtinIdeas.length >= 158);
+  assert.equal(
+    new Set(builtinIdeas.map((i) => i.id)).size,
+    builtinIdeas.length,
+  );
   for (const i of builtinIdeas) {
     assert.ok(
       i.description &&
@@ -205,4 +208,51 @@ test("concurrent incoming batches do not overwrite newer data", async () => {
   ]);
   assert.equal(a.data.ideas[0].title, "new");
   a.db.close();
+});
+
+test("liked and superliked recommendations outrank unseen ideas; pool and image sync", async () => {
+  const a = await make("A"),
+    b = await make("B");
+  const liked = "builtin-movie-1",
+    superliked = "builtin-music-1";
+  await a.react(liked, "like");
+  await b.react(superliked, "favorite");
+  await a.merge(delta(b, metadata(a)));
+  assert.ok(
+    preference(
+      a,
+      a.ideas.find((i) => i.id === superliked),
+    ) >
+      preference(
+        a,
+        a.ideas.find((i) => i.id === liked),
+      ),
+  );
+  assert.equal(recommendations(a)[0].id, superliked);
+  assert.ok(!recommendations(a, [superliked]).some((i) => i.id === superliked));
+  const custom = await a.save("customTasks", {
+    title: "Наш вопрос",
+    kind: "question",
+  });
+  const photo = await a.save("ideas", {
+    title: "Фото",
+    source: "user",
+    image: "data:image/jpeg;base64,YQ==",
+  });
+  await b.merge(delta(a, metadata(b)));
+  assert.equal(
+    b.data.customTasks.find((t) => t.id === custom.id).kind,
+    "question",
+  );
+  assert.equal(b.ideas.find((i) => i.id === photo.id).image, photo.image);
+  for (const minutes of [30, 60, 120, 180, 240]) {
+    const result = surprise(
+      a.ideas.filter((i) => i.duration),
+      { minutes, score: (i) => preference(a, i) },
+    ).map((id) => a.ideas.find((i) => i.id === id));
+    assert.ok(result.length);
+    assert.ok(result.reduce((n, i) => n + i.duration, 0) <= minutes);
+  }
+  a.db.close();
+  b.db.close();
 });

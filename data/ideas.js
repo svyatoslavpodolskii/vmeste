@@ -1,4 +1,4 @@
-﻿// Строки: название | описание | минуты | стоимость (₸, ориентир).
+import { moreIdeas } from "./more-ideas.js"; // Строки: название | описание | минуты | стоимость (₸, ориентир).
 const groups = [
   [
     "Дома",
@@ -261,3 +261,5 @@ export const categories = [
   "Бесплатно",
   "Быстро",
 ];
+
+builtinIdeas.push(...moreIdeas);

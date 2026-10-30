@@ -1347,3 +1347,74 @@ dialog li {
     scroll-behavior: auto !important;
   }
 }
+.bottom-nav {
+  grid-template-columns: repeat(5, 1fr);
+}
+.nav-item {
+  min-width: 0;
+  font-size: 11px;
+}
+.suggestions .suggestion {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.suggestions .suggestion .title-button {
+  flex: 1;
+  text-align: left;
+}
+.user-art {
+  object-fit: cover;
+}
+#swipe-card {
+  touch-action: pan-y;
+  padding: 20px;
+  border-radius: 24px;
+  background: var(--surface, #fff8f4);
+  margin: 18px 0;
+  user-select: none;
+}
+#swipe-card .art {
+  width: 100%;
+  height: 220px;
+  object-fit: contain;
+}
+.game-shelf .saved-plan {
+  gap: 16px;
+}
+.game-shelf .saved-plan > div {
+  flex: 1;
+}
+details {
+  margin: 20px 0;
+  padding: 16px;
+  border-radius: 16px;
+  background: #f0eafa;
+}
+summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+.like {
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.suggestions {
+  grid-template-columns: minmax(0, 1fr);
+}
+.suggestions .suggestion {
+  min-width: 0;
+  padding: 10px;
+}
+.suggestions .suggestion .art {
+  width: 60px;
+  flex: 0 0 60px;
+}
+.suggestions .suggestion .title-button {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.game-shelf .hero {
+  min-height: 0;
+}

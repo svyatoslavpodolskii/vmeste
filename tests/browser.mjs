@@ -75,6 +75,10 @@ try {
   assert.match(await a.locator(".saved-plan").innerText(), /Выполнен/);
   record("Build, save and complete plan");
   await a.getByRole("button", { name: "Удиви нас", exact: false }).click();
+  await a
+    .locator("#surprise-form")
+    .getByRole("button", { name: "Собрать вечер" })
+    .click();
   await a.locator(".plan-item").nth(2).waitFor();
   assert.equal(await a.locator(".plan-item").count(), 3);
   const firstTitle = await a.locator(".plan-item h3").first().textContent();

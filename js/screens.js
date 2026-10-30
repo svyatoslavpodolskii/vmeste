@@ -1,3 +1,4 @@
+import { recommendations, preference } from "./plans.js";
 import { esc, icon, btn, card, empty, art, duration } from "./ui.js";
 import { categories } from "../data/ideas.js";
 export function onboarding(room) {
@@ -7,6 +8,7 @@ export function header(s) {
   const titles = {
     ideas: "Вместе",
     build: "Собрать вечер",
+    games: "Игры",
     matches: "Матчи",
     profile: "Наша комната",
   };
@@ -18,13 +20,14 @@ export function header(s) {
     )
     .join(
       "",
-    )}${s.store.users.length < 2 ? '<span class="avatar waiting">♡</span>' : ""}</div></div><p class="subtitle">${{ ideas: "Идеи, игры и маленькие приключения", build: "Что-то простое, уютное и ваше", matches: "То, что понравилось вам обоим", profile: "Место, куда хочется возвращаться" }[s.tab]}</p><button class="sync-status" data-action="connection"><span class="status-dot"></span><span id="connection-status">${esc(s.status)}</span></button></header>`;
+    )}${s.store.users.length < 2 ? '<span class="avatar waiting">♡</span>' : ""}</div></div><p class="subtitle">${{ ideas: "Идеи, игры и маленькие приключения", build: "Что-то простое, уютное и ваше", games: "Колоды для двоих · ваши вопросы и задания", matches: "То, что понравилось вам обоим", profile: "Место, куда хочется возвращаться" }[s.tab]}</p><button class="sync-status" data-action="connection"><span class="status-dot"></span><span id="connection-status">${esc(s.status)}</span></button></header>`;
 }
 export function navigation(tab, count) {
   return `<nav class="bottom-nav" aria-label="Основная навигация">${[
     ["ideas", "idea", "Идеи"],
     ["build", "plan", "Собрать"],
     ["matches", "match", "Матчи"],
+    ["games", "games", "Игры"],
     ["profile", "user", "Профиль"],
   ]
     .map(
@@ -35,7 +38,6 @@ export function navigation(tab, count) {
 }
 export function filtered(s) {
   return s.store.ideas.filter((i) => {
-    if (s.store.reaction(i.id) === "skip" && !s.showSkipped) return false;
     const c = s.category;
     if (
       c !== "Всё" &&
@@ -49,7 +51,11 @@ export function filtered(s) {
       return false;
     if (s.mood && i.mood !== s.mood) return false;
     if (s.maxDuration && i.duration > s.maxDuration) return false;
-    if (s.onlyFavorites && s.store.reaction(i.id) !== "favorite") return false;
+    if (
+      s.onlyFavorites &&
+      !["like", "favorite"].includes(s.store.reaction(i.id))
+    )
+      return false;
     return `${i.title} ${i.description}`
       .toLowerCase()
       .includes(s.search.toLowerCase());
@@ -71,7 +77,7 @@ export function ideasScreen(s) {
       "new-idea",
       "Предложить идею",
     )
-  }</div>${list.length > s.limit ? btn(`Ещё идеи · осталось ${list.length - s.limit}`, "more", "soft wide") : ""}<aside class="banner"><span class="banner-icon">✦</span><div><h3>Из общей базы</h3><p>100 способов побыть ближе.<br>А ваши идеи сделают её ещё лучше.</p></div>${btn(icon("arrow"), "all", "lavender", 'aria-label="Открыть всю базу"')}</aside>`;
+  }</div>${list.length > s.limit ? btn(`Ещё идеи · осталось ${list.length - s.limit}`, "more", "soft wide") : ""}<aside class="banner"><span class="banner-icon">✦</span><div><h3>Из общей базы</h3><p>${s.store.ideas.length} способов побыть ближе.<br>А ваши идеи сделают её ещё лучше.</p></div>${btn(icon("arrow"), "all", "lavender", 'aria-label="Открыть всю базу"')}</aside>`;
 }
 export function buildScreen(s) {
   const ideas = s.draft
@@ -79,23 +85,18 @@ export function buildScreen(s) {
       .filter(Boolean),
     total = ideas.reduce((sum, i) => sum + i.duration, 0);
   const saved = s.store.data.plans.filter((p) => !p.deletedAt);
-  return `<section class="plan-panel"><div class="section-title"><h2>Ваш план <span class="spark">✧</span></h2><span class="pill">${icon("clock")}${duration(total)}</span></div><p class="muted">Перетаскивайте за ⋮⋮ или используйте стрелки</p><ol class="plan-items">${ideas.map((i, n) => `<li class="plan-item" data-index="${n}"><span class="step-number">${n + 1}</span>${art(i)}<div class="plan-info"><h3>${esc(i.title)}</h3><span class="muted">${duration(i.duration)} · ${esc(i.location)}</span><div class="reorder-controls"><button class="icon-btn" data-action="move-up" data-index="${n}" aria-label="Выше: ${esc(i.title)}" ${n === 0 ? "disabled" : ""}>${icon("up")}</button><button class="icon-btn" data-action="move-down" data-index="${n}" aria-label="Ниже: ${esc(i.title)}" ${n === ideas.length - 1 ? "disabled" : ""}>${icon("down")}</button><button class="icon-btn" data-action="remove-plan-item" data-index="${n}" aria-label="Убрать: ${esc(i.title)}">${icon("close")}</button></div></div><button class="drag-handle" aria-label="Перетащить: ${esc(i.title)}" data-index="${n}">⋮⋮</button></li>`).join("")}</ol>${!ideas.length ? empty("Вечер начинается с идеи", "Добавьте пару занятий — получится ваш маленький план.") : ""}</section><div class="section-title"><h2>Добавить ещё <span class="spark">✧</span></h2>${btn("Все идеи " + icon("arrow"), "ideas", "text")}</div><div class="suggestions">${s.store.ideas
-    .filter((i) => !s.draft.includes(i.id))
-    .filter((i) =>
-      [
-        "builtin-games-8",
-        "builtin-music-1",
-        "builtin-art-1",
-        "builtin-food-3",
-      ].includes(i.id),
-    )
+  return `<section class="plan-panel"><div class="section-title"><h2>Ваш план <span class="spark">✧</span></h2><span class="pill">${icon("clock")}${duration(total)}</span></div><p class="muted">Перетаскивайте за ⋮⋮ или используйте стрелки</p><ol class="plan-items">${ideas.map((i, n) => `<li class="plan-item" data-index="${n}"><span class="step-number">${n + 1}</span>${art(i)}<div class="plan-info"><h3>${esc(i.title)}</h3><span class="muted">${duration(i.duration)} · ${esc(i.location)}</span><div class="reorder-controls"><button class="icon-btn" data-action="move-up" data-index="${n}" aria-label="Выше: ${esc(i.title)}" ${n === 0 ? "disabled" : ""}>${icon("up")}</button><button class="icon-btn" data-action="move-down" data-index="${n}" aria-label="Ниже: ${esc(i.title)}" ${n === ideas.length - 1 ? "disabled" : ""}>${icon("down")}</button><button class="icon-btn" data-action="remove-plan-item" data-index="${n}" aria-label="Убрать: ${esc(i.title)}">${icon("close")}</button></div></div><button class="drag-handle" aria-label="Перетащить: ${esc(i.title)}" data-index="${n}">⋮⋮</button></li>`).join("")}</ol>${!ideas.length ? empty("Вечер начинается с идеи", "Добавьте пару занятий — получится ваш маленький план.") : ""}</section><aside class="banner"><span class="banner-icon">⚄</span><div><h3>Случайный выбор</h3><p>Выберите место, настроение и время</p></div>${btn(icon("shuffle") + " Удиви нас", "surprise", "lavender")}</aside>${btn(icon("plan") + " Сохранить план", "save-plan", "primary wide", ideas.length ? "" : "disabled")}<div class="section-title"><h2>Наши планы</h2><span class="muted">${saved.length}</span></div>${saved.map((p) => `<article class="saved-plan ${p.completedAt ? "completed" : ""}"><div><h3>${esc(p.title)}</h3><p>${p.items.length} занятия · ${p.completedAt ? "Выполнен ♡" : "Ждёт своего вечера"}</p></div><div class="row">${btn("Открыть", "open-plan", "soft", `data-id="${esc(p.id)}"`)}${btn(p.completedAt ? "Вернуть" : "Готово " + icon("check"), "complete-plan", "lavender", `data-id="${esc(p.id)}"`)}<button class="icon-btn" data-action="delete-plan" data-id="${esc(p.id)}" aria-label="Удалить план ${esc(p.title)}">${icon("trash")}</button></div></article>`).join("") || '<p class="muted center">Сохранённые вечера появятся здесь.</p>'}<div class="section-title"><h2>Добавить ещё <span class="spark">✧</span></h2>${btn("Все идеи " + icon("arrow"), "ideas", "text")}</div>${btn("♡ Листать понравившиеся", "swipe", "primary wide")}<p class="muted">Сначала сердечки, затем идеи в настроении вашего плана. Листайте дальше — без фильтров.</p><div class="suggestions">${recommendations(
+    s.store,
+    s.draft,
+  )
+    .slice(0, s.suggestLimit || 12)
     .map(
       (i) =>
-        `<button class="suggestion" data-action="add-plan" data-id="${i.id}">${art(i)}<span>${esc(i.title)}</span><b>+</b></button>`,
+        `<article class="suggestion">${art(i)}<button class="title-button" data-action="detail" data-id="${esc(i.id)}">${esc(i.title)} ${preference(s.store, i) ? "♥" : ""}</button>${btn("+", "add-plan", "soft", `data-id="${esc(i.id)}" aria-label="Добавить: ${esc(i.title)}"`)}</article>`,
     )
     .join(
       "",
-    )}</div><aside class="banner"><span class="banner-icon">⚄</span><div><h3>Случайный выбор</h3><p>Уютный вечер дома, до двух часов</p></div>${btn(icon("shuffle") + " Удиви нас", "surprise", "lavender")}</aside>${btn(icon("plan") + " Сохранить план", "save-plan", "primary wide", ideas.length ? "" : "disabled")}<div class="section-title"><h2>Наши планы</h2><span class="muted">${saved.length}</span></div>${saved.map((p) => `<article class="saved-plan ${p.completedAt ? "completed" : ""}"><div><h3>${esc(p.title)}</h3><p>${p.items.length} занятия · ${p.completedAt ? "Выполнен ♡" : "Ждёт своего вечера"}</p></div><div class="row">${btn("Открыть", "open-plan", "soft", `data-id="${esc(p.id)}"`)}${btn(p.completedAt ? "Вернуть" : "Готово " + icon("check"), "complete-plan", "lavender", `data-id="${esc(p.id)}"`)}<button class="icon-btn" data-action="delete-plan" data-id="${esc(p.id)}" aria-label="Удалить план ${esc(p.title)}">${icon("trash")}</button></div></article>`).join("") || '<p class="muted center">Сохранённые вечера появятся здесь.</p>'}`;
+    )}</div>${recommendations(s.store, s.draft).length > (s.suggestLimit || 12) ? btn("Ещё рекомендации", "more-suggestions", "soft wide", 'id="recommendation-more"') : '<p class="muted">Вы просмотрели всю коллекцию. Новые ваши идеи тоже появятся здесь.</p>'}`;
 }
 export function matchesScreen(s) {
   const matches = s.store.matches;
@@ -104,5 +105,32 @@ export function matchesScreen(s) {
 export function profileScreen(s) {
   const me = s.store.users.find((u) => u.localUserId === s.store.userId),
     partner = s.store.users.find((u) => u.localUserId !== s.store.userId);
-  return `<section class="room-card"><img src="./assets/together.svg" alt="" class="room-art"><h2>${esc(me?.displayName || "Вы")}${partner ? " и " + esc(partner.displayName) : " и ваш человек"}</h2><p class="muted">${partner ? "Хорошо, что вы есть друг у друга." : "Пригласите того, с кем хочется делить маленькие радости."}</p>${btn(icon("copy") + " Скопировать ссылку", "copy-link", "primary wide")}<p class="room-id">Комната ${esc(s.store.roomId)}</p></section><section class="settings"><h2>О вас</h2><form id="profile-form"><label>Имя<input name="name" maxlength="60" value="${esc(me?.displayName || "")}" required></label><label>Значок<select name="avatar">${["🌷", "🌿", "☀️", "🌙", "🍑", "🪻", "🧸", "🍀"].map((a) => `<option ${me?.avatar === a ? "selected" : ""}>${a}</option>`).join("")}</select></label><button class="btn soft" type="submit">Сохранить</button></form></section><section class="settings"><h2>Ваши данные</h2><p class="muted">Идеи хранятся на ваших устройствах. Для обмена изменениями откройте комнату одновременно.</p><div class="settings-actions">${btn("Избранные идеи", "favorites", "text")}${btn("Мои задания", "tasks", "text")}${btn("Скачать резервную копию", "export", "text")}<label class="btn text file-label">Восстановить из файла<input type="file" id="import-file" accept="application/json,.json"></label>${btn("Установить приложение", "install", "text")}${btn("О связи и приватности", "connection", "text")}${btn("Выйти из комнаты", "leave", "text")}${btn("Очистить локальную копию", "clear", "text danger")}</div></section><p class="fine center">Сделано для маленьких моментов ♡<br>Вместе · версия 1.0</p>`;
+  return `<section class="room-card"><img src="./assets/together.svg" alt="" class="room-art"><h2>${esc(me?.displayName || "Вы")}${partner ? " и " + esc(partner.displayName) : " и ваш человек"}</h2><p class="muted">${partner ? "Хорошо, что вы есть друг у друга." : "Пригласите того, с кем хочется делить маленькие радости."}</p>${btn(icon("copy") + " Скопировать ссылку", "copy-link", "primary wide")}<p class="room-id">Комната ${esc(s.store.roomId)}</p></section><section class="settings"><h2>О вас</h2><form id="profile-form"><label>Имя<input name="name" maxlength="60" value="${esc(me?.displayName || "")}" required></label><label>Значок<select name="avatar">${["🙂", "😎", "🥰", "🤓", "🧑‍🎨", "🧑‍🚀", "🧑‍🍳", "🧑‍💻", "🧔", "👩", "👨", "🧑", "🐱", "🐶", "🦊", "🐻", "🐼", "🦁", "🐸", "🐧", "🎮", "🎸", "🏀", "🚲", "☕", "🍕", "🌷", "🌿", "☀️", "🌙", "🧸", "🍀"].map((a) => `<option ${me?.avatar === a ? "selected" : ""}>${a}</option>`).join("")}</select></label><button class="btn soft" type="submit">Сохранить</button></form></section><section class="settings"><h2>Ваши данные</h2><p class="muted">Идеи хранятся на ваших устройствах. Для обмена изменениями откройте комнату одновременно.</p><div class="settings-actions">${btn("Понравившиеся идеи", "favorites", "text")}${btn("Наш пул вопросов и действий", "tasks", "text")}${btn("Скачать резервную копию", "export", "text")}<label class="btn text file-label">Восстановить из файла<input type="file" id="import-file" accept="application/json,.json"></label>${btn("Установить приложение", "install", "text")}${btn("О связи и приватности", "connection", "text")}${btn("Выйти из комнаты", "leave", "text")}${btn("Очистить локальную копию", "clear", "text danger")}</div></section><p class="fine center">Сделано для маленьких моментов ♡<br>Вместе · версия 2.0</p>`;
+}
+
+export function gamesScreen() {
+  return `<section class="hero"><div class="hero-copy"><h2>Время играть</h2><p>Готовые колоды и ваши карточки. Без повторов, пока колода не закончится.</p></div></section><div class="game-shelf">${[
+    ["questions", "💬", "Вопросы друг другу", "Узнавайте новое по очереди"],
+    ["mixed", "🎭", "Правда или действие", "Перемешанные вопросы и задания"],
+    [
+      "riddles",
+      "🕵️",
+      "Данетки",
+      "Один ведущий знает ответ, другой задаёт вопросы",
+    ],
+    [
+      "choice",
+      "🤔",
+      "Что бы ты выбрал?",
+      "Выберите вариант и объясните почему",
+    ],
+    ["likely", "👉", "Кто скорее?", "Покажите друг на друга одновременно"],
+  ]
+    .map(
+      ([id, emoji, title, desc]) =>
+        `<article class="saved-plan"><div><h3>${emoji} ${title}</h3><p>${desc}</p></div>${btn("Играть", "play", "primary", `data-id="${id}"`)}</article>`,
+    )
+    .join(
+      "",
+    )}</div>${btn("✍️ Подготовить свои карточки", "tasks", "lavender wide")}<p class="muted">Добавьте вопросы и действия заранее. Пул общий для вашей комнаты.</p>`;
 }

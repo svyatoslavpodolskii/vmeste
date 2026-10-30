@@ -140,6 +140,10 @@ try {
   console.log("PASS original participant identity restored");
   await nav(a, "Собрать");
   await a.getByRole("button", { name: "Удиви нас", exact: false }).click();
+  await a
+    .locator("#surprise-form")
+    .getByRole("button", { name: "Собрать вечер" })
+    .click();
   await a.locator(".plan-item").nth(2).waitFor();
   const before = await a.locator(".plan-item h3").first().textContent(),
     from = await a.locator(".drag-handle").first().boundingBox(),

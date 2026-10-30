@@ -19,9 +19,23 @@ import {
   buildScreen,
   matchesScreen,
   profileScreen,
+  gamesScreen,
 } from "./screens.js";
-import { surprise, reorder, shuffle } from "./plans.js";
-import { questions, truths, dares, choices, likely } from "../data/games.js";
+import {
+  surprise,
+  reorder,
+  shuffle,
+  preference,
+  recommendations,
+} from "./plans.js";
+import {
+  questions,
+  truths,
+  dares,
+  choices,
+  likely,
+  riddles,
+} from "../data/games.js";
 const app = document.querySelector("#app");
 const params = new URLSearchParams(location.search);
 const identityKey =
@@ -40,7 +54,9 @@ let db,
   matchIds = new Set(),
   game = null;
 const state = {
-  tab: ["ideas", "build", "matches", "profile"].includes(location.hash.slice(1))
+  tab: ["ideas", "build", "matches", "games", "profile"].includes(
+    location.hash.slice(1),
+  )
     ? location.hash.slice(1)
     : "ideas",
   category: "Всё",
@@ -61,7 +77,7 @@ function render() {
   state.store = store;
   state.roomLabel = roomId.slice(0, 6).toUpperCase();
   const scroll = window.scrollY;
-  app.innerHTML = `<div class="app-shell">${header(state)}<main id="main">${{ ideas: ideasScreen, build: buildScreen, matches: matchesScreen, profile: profileScreen }[state.tab](state)}</main>${navigation(state.tab, store.matches.length)}</div>`;
+  app.innerHTML = `<div class="app-shell">${header(state)}<main id="main">${{ ideas: ideasScreen, build: buildScreen, matches: matchesScreen, profile: profileScreen, games: gamesScreen }[state.tab](state)}</main>${navigation(state.tab, store.matches.length)}</div>`;
   window.scrollTo(0, scroll);
 }
 function navigate(tab) {
@@ -139,13 +155,13 @@ function detail(id) {
     "builtin-games-1",
   ].includes(id);
   sheet(
-    `<div class="detail-art">${art(i)}</div><span class="eyebrow">${esc(i.category || "ВАША ИДЕЯ")}</span><h2>${esc(i.title)}</h2><p class="detail-description">${esc(i.description || "Маленькая идея для вашего особенного вечера.")}</p><div class="tags"><span>${icon("clock")}${duration(i.duration || 30)}</span><span>${icon("home")}${esc(i.location || "Дома")}</span><span>${i.cost ? esc(i.cost) + " ₸ примерно" : "Бесплатно"}</span><span class="mood">${esc(i.mood || "Уютно")}</span></div>${i.materials ? `<h3>Что понадобится</h3><ul>${i.materials.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}<h3>Как провести время</h3><ol class="instructions">${(i.steps || [i.description || "Обсудите, как хотите провести время.", "Выберите удобный момент и приготовьте всё необходимое.", "Наслаждайтесь процессом — здесь не нужно делать идеально."]).map((x) => `<li>${esc(x)}</li>`).join("")}</ol>${playable ? btn("Начать игру " + icon("arrow"), "game", "lavender wide", `data-id="${esc(id)}"`) : ""}<div class="row detail-buttons">${btn(icon("heart") + " Нравится", "like", "soft", `data-id="${esc(id)}"`)}${btn(icon("bookmark") + " В план", "add-plan", "primary", `data-id="${esc(id)}"`)}</div>${btn(store.reaction(id) === "favorite" ? "Убрать из избранного" : "☆ Сохранить в избранное", "favorite", "text wide", `data-id="${esc(id)}"`)}${i.source === "user" && i.authorId === userId ? `<div class="row">${btn("Изменить", "edit-idea", "text", `data-id="${esc(id)}"`)}${btn("Удалить идею", "delete-idea", "text danger", `data-id="${esc(id)}"`)}</div>` : ""}`,
+    `<div class="detail-art">${art(i)}</div><span class="eyebrow">${esc(i.category || "ВАША ИДЕЯ")}</span><h2>${esc(i.title)}</h2><p class="detail-description">${esc(i.description || "Маленькая идея для вашего особенного вечера.")}</p><div class="tags"><span>${icon("clock")}${duration(i.duration || 30)}</span><span>${icon("home")}${esc(i.location || "Дома")}</span><span>${i.cost ? esc(i.cost) + " ₸ примерно" : "Бесплатно"}</span><span class="mood">${esc(i.mood || "Уютно")}</span></div>${i.materials ? `<h3>Что понадобится</h3><ul>${i.materials.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}<h3>Как провести время</h3><ol class="instructions">${(i.steps || [i.description || "Обсудите, как хотите провести время.", "Выберите удобный момент и приготовьте всё необходимое.", "Наслаждайтесь процессом — здесь не нужно делать идеально."]).map((x) => `<li>${esc(x)}</li>`).join("")}</ol>${playable ? btn("Начать игру " + icon("arrow"), "game", "lavender wide", `data-id="${esc(id)}"`) : ""}<div class="row detail-buttons">${btn(icon("heart") + (["like", "favorite"].includes(store.reaction(id)) ? " Нравится ♥" : " Нравится"), "like", "soft", `data-id="${esc(id)}"`)}${btn(icon("bookmark") + " В план", "add-plan", "primary", `data-id="${esc(id)}"`)}</div>${btn(store.reaction(id) === "favorite" ? "♥★ Убрать суперлайк" : "♥★ Суперлайк", "favorite", "text wide", `data-id="${esc(id)}"`)}${i.source === "user" && i.authorId === userId ? `<div class="row">${btn("Изменить", "edit-idea", "text", `data-id="${esc(id)}"`)}${btn("Удалить идею", "delete-idea", "text danger", `data-id="${esc(id)}"`)}</div>` : ""}`,
   );
 }
 function ideaForm(id) {
   const i = id ? ideaById(id) : {};
   sheet(
-    `<span class="eyebrow">ЛУЧШИЕ ИДЕИ — ВАШИ</span><h2>${id ? "Изменить идею" : "А давай…"}</h2><p class="muted">Достаточно названия. Остальное — по желанию.</p><form id="idea-form" data-id="${esc(id || "")}"><label>Название<input name="title" placeholder="Например, встретить рассвет" maxlength="160" required value="${esc(i.title || "")}"></label><label>Пару слов об идее<textarea name="description" maxlength="4000" placeholder="Что будем делать?">${esc(i.description || "")}</textarea></label><div class="form-grid"><label>Категория<select name="category">${["Дома", "Прогулки", "Игры", "Задания", "Еда", "Музыка", "Разговоры", "Творчество", "Свидания"].map((c) => `<option ${i.category === c ? "selected" : ""}>${c}</option>`).join("")}</select></label><label>Настроение<select name="mood">${["Уютно", "Спокойно", "Весело", "Близко", "Активно", "Творчески", "Необычно"].map((c) => `<option ${i.mood === c ? "selected" : ""}>${c}</option>`).join("")}</select></label><label>Где<select name="location">${["Дома", "На улице", "Где угодно"].map((c) => `<option ${i.location === c ? "selected" : ""}>${c}</option>`).join("")}</select></label><label>Минут<input name="duration" type="number" inputmode="numeric" min="1" max="1440" value="${i.duration || 30}"></label><label>Примерно, ₸<input name="cost" type="number" inputmode="numeric" min="0" max="10000000" value="${i.cost || 0}"></label><label>Значок<input name="icon" maxlength="8" value="${esc(i.icon || "✨")}"></label></div><button class="btn primary wide" type="submit">${id ? "Сохранить изменения" : "Добавить нашу идею"}</button></form>`,
+    `<span class="eyebrow">ЛУЧШИЕ ИДЕИ — ВАШИ</span><h2>${id ? "Изменить идею" : "А давай…"}</h2><p class="muted">Достаточно названия. Остальное — по желанию.</p><form id="idea-form" data-id="${esc(id || "")}"><label>Название<input name="title" placeholder="Например, встретить рассвет" maxlength="160" required value="${esc(i.title || "")}"></label><label>Пару слов об идее<textarea name="description" maxlength="4000" placeholder="Что будем делать?">${esc(i.description || "")}</textarea></label><label>Картинка (по желанию)<input type="file" name="photo" accept="image/png,image/jpeg,image/webp"></label>${i.image ? '<label class="check-label"><input type="checkbox" name="removeImage">Убрать картинку</label>' : ""}<div class="form-grid"><label>Категория<select name="category">${["Дома", "Прогулки", "Игры", "Задания", "Еда", "Музыка", "Разговоры", "Творчество", "Свидания"].map((c) => `<option ${i.category === c ? "selected" : ""}>${c}</option>`).join("")}</select></label><label>Настроение<select name="mood">${["Уютно", "Спокойно", "Весело", "Близко", "Активно", "Творчески", "Необычно"].map((c) => `<option ${i.mood === c ? "selected" : ""}>${c}</option>`).join("")}</select></label><label>Где<select name="location">${["Дома", "На улице", "Где угодно"].map((c) => `<option ${i.location === c ? "selected" : ""}>${c}</option>`).join("")}</select></label><label>Минут<input name="duration" type="number" inputmode="numeric" min="1" max="1440" value="${i.duration || 30}"></label><label>Примерно, ₸<input name="cost" type="number" inputmode="numeric" min="0" max="10000000" value="${i.cost || 0}"></label><label>Значок<input name="icon" maxlength="8" value="${esc(i.icon || "✨")}"></label></div><button class="btn primary wide" type="submit">${id ? "Сохранить изменения" : "Добавить нашу идею"}</button></form>`,
   );
 }
 function filterSheet() {
@@ -163,34 +179,89 @@ function filterSheet() {
       )
       .join(
         "",
-      )}</select></label><label class="check-label"><input name="favorites" type="checkbox" ${state.onlyFavorites ? "checked" : ""}>Только избранное</label><label class="check-label"><input name="skipped" type="checkbox" ${state.showSkipped ? "checked" : ""}>Показать пропущенные идеи</label><button class="btn primary wide" type="submit">Найти занятие</button></form>`,
+      )}</select></label><label class="check-label"><input name="favorites" type="checkbox" ${state.onlyFavorites ? "checked" : ""}>Только с сердечком</label><button class="btn primary wide" type="submit">Найти занятие</button></form>`,
   );
 }
+const gameNames = {
+  questions: "Вопросы друг другу",
+  mixed: "Правда или действие",
+  riddles: "Данетки",
+  choice: "Что бы ты выбрал?",
+  likely: "Кто скорее?",
+};
+function gamePool(kind) {
+  const own = store.data.customTasks.filter((t) => !t.deletedAt);
+  const q = [
+    ...questions,
+    ...own.filter((t) => t.kind === "question").map((t) => t.title),
+  ];
+  const truth = [
+    ...truths,
+    ...own.filter((t) => t.kind === "truth").map((t) => t.title),
+  ];
+  const dare = [
+    ...dares,
+    ...own.filter((t) => !t.kind || t.kind === "dare").map((t) => t.title),
+  ];
+  return kind === "riddles"
+    ? riddles
+    : [
+        ...new Set(
+          kind === "questions"
+            ? [...q, ...truth]
+            : kind === "mixed"
+              ? [...q, ...truth]
+                  .map((x) => "Правда · " + x)
+                  .concat(dare.map((x) => "Действие · " + x))
+              : kind === "choice"
+                ? choices
+                : likely,
+        ),
+      ];
+}
+function startGame(kind) {
+  const key = `${roomId}:deck:${kind}`;
+  game = { kind, key };
+  try {
+    Object.assign(game, JSON.parse(localStorage.getItem(key)) || {});
+  } catch {}
+  if (!Array.isArray(game.order) || !game.order.length)
+    game.order = shuffle(gamePool(kind));
+  gameView();
+}
 function gameView() {
-  const list =
-    game.kind === "truth"
-      ? truths
-      : game.kind === "dare"
-        ? dares
-        : game.kind === "choice"
-          ? choices
-          : game.kind === "likely"
-            ? likely
-            : questions;
-  const index = game.index % list.length;
+  localStorage.setItem(
+    game.key,
+    JSON.stringify({ order: game.order, index: game.index || 0 }),
+  );
+  const index = game.index || 0,
+    item = game.order[index],
+    done = index >= game.order.length;
   sheet(
-    `<div class="game-header"><span class="eyebrow">${game.kind === "truth" ? "ПРАВДА" : game.kind === "dare" ? "ДЕЙСТВИЕ" : "ПО ОЧЕРЕДИ, БЕЗ СПЕШКИ"}</span><h2>${game.title}</h2></div><div class="question-card"><span>${index + 1} / ${list.length}</span><p>${esc(list[game.order[index]])}</p><span>♡</span></div><p class="muted center">Любой вопрос или задание можно пропустить.<br>Здесь важно, чтобы обоим было хорошо.</p>${game.truthOrDare ? `<div class="row">${btn("Правда", "truth", "soft")}${btn("Действие", "dare", "lavender")}</div>` : ""}${btn(index === list.length - 1 ? "Начать новый круг" : "Следующая карточка " + icon("arrow"), "next-question", "primary wide")}`,
+    `<span class="eyebrow">${esc(gameNames[game.kind])}</span><h2>${done ? "Колода закончилась" : "Ваш ход"}</h2>${done ? "<p>Все карточки сыграны. Новый круг перемешает колоду и добавит новые карточки из пула.</p>" : `<div class="question-card"><span>${index + 1} / ${game.order.length}</span><p>${esc(typeof item === "object" ? item.title : item)}</p></div>${game.kind === "riddles" ? `<p class="muted">Передайте экран ведущему. Он читает разгадку и отвечает только «да», «нет» или «неважно». Затем спрячьте ответ и читайте историю вместе.</p><details><summary>Разгадка · только для ведущего</summary><p>${esc(item.answer)}</p></details>` : '<p class="muted">Отвечайте по очереди. Любую карточку можно пропустить без объяснений.</p>'}`}${btn(done ? "Перемешать новую колоду" : "Следующая карточка →", done ? "restart-game" : "next-question", "primary wide")}`,
   );
 }
 function tasksSheet() {
   sheet(
-    `<h2>Маленькие задания</h2><p class="muted">Придумайте друг для друга что-нибудь доброе.</p><form id="task-form"><label>Новое задание<input name="title" placeholder="Найти наше самое смешное фото" maxlength="160" required></label><button class="btn primary" type="submit">Добавить</button></form><div class="task-list">${store.data.customTasks
+    `<h2>Наши карточки</h2><p class="muted">Подготовьте заранее. Вопросы появятся в разговорах и правде, действия — в «Правде или действии». Существующая колода сохраняется до конца круга.</p><form id="task-form"><label>Тип<select name="kind"><option value="question">Вопрос</option><option value="truth">Правда</option><option value="dare">Действие</option></select></label><label>Текст<input name="title" maxlength="160" required placeholder="Что ты давно хотел попробовать?"></label><button class="btn primary" type="submit">Добавить в пул</button></form><div class="task-list">${store.data.customTasks
       .filter((t) => !t.deletedAt)
       .map(
         (t) =>
-          `<article class="saved-plan"><h3>${esc(t.title)}</h3><div class="row">${btn(t.completedAt ? "Выполнено ✓" : "Отметить готовым", "complete-task", "soft", `data-id="${esc(t.id)}"`)}${btn("Удалить", "delete-task", "text", `data-id="${esc(t.id)}"`)}</div></article>`,
+          `<article class="saved-plan"><div><span class="muted">${{ question: "Вопрос", truth: "Правда", dare: "Действие" }[t.kind] || "Действие"}</span><h3>${esc(t.title)}</h3></div>${btn("Удалить", "delete-task", "text", `data-id="${esc(t.id)}"`)}</article>`,
       )
       .join("")}</div>`,
+  );
+}
+let swipeDeck = [];
+function swipeView() {
+  swipeDeck = swipeDeck.filter(
+    (id) => ideaById(id) && !state.draft.includes(id),
+  );
+  const i = ideaById(swipeDeck[0]);
+  sheet(
+    i
+      ? `<h2>Из ваших сердечек</h2><p class="muted">Вправо — в план, влево — следующая. Сердечки сохраняются.</p><div id="swipe-card" data-id="${esc(i.id)}">${art(i)}<h3>${esc(i.title)}</h3><p>${esc(i.description)}</p><span>${duration(i.duration)} · ${esc(i.location)}</span></div><div class="row">${btn("← Дальше", "swipe-next", "soft")}${btn("В план →", "swipe-add", "primary", `data-id="${esc(i.id)}"`)}</div><p class="muted">Осталось ${swipeDeck.length}</p>`
+      : `<h2>Всё посмотрели</h2><p>Лайкните больше идей или продолжите подбор в рекомендациях.</p>${btn("Вернуться к плану", "close", "primary")}`,
   );
 }
 function confirmSheet(title, text, action, id = "") {
@@ -200,7 +271,7 @@ function confirmSheet(title, text, action, id = "") {
 }
 async function action(a, el) {
   const id = el.dataset.id;
-  if (["ideas", "build", "matches", "profile"].includes(a)) {
+  if (["ideas", "build", "matches", "games", "profile"].includes(a)) {
     navigate(a);
     return;
   }
@@ -243,7 +314,7 @@ async function action(a, el) {
         id,
         ["like", "favorite"].includes(store.reaction(id)) ? "none" : "like",
       );
-      if (document.querySelector("#sheet").open) toast("Реакция сохранена");
+      if (document.querySelector("#sheet").open) detail(id);
       break;
     case "favorite":
       await store.react(
@@ -324,21 +395,44 @@ async function action(a, el) {
       await persistDraft();
       render();
       break;
-    case "surprise":
-      if (state.draft.length)
-        confirmSheet(
-          "Собрать новый вечер?",
-          "Текущий несохранённый список будет заменён тремя совместимыми занятиями.",
-          "confirm-surprise",
-        );
-      else await action("confirm-surprise", el);
-      break;
-    case "confirm-surprise":
-      state.draft = surprise(store.ideas);
-      await persistDraft();
-      closeSheet();
+    case "more-suggestions":
+      state.suggestLimit = (state.suggestLimit || 12) + 12;
       render();
-      toast("Ваш уютный вечер готов ♡");
+      break;
+    case "swipe":
+      swipeDeck = recommendations(store, state.draft)
+        .filter((i) => preference(store, i))
+        .sort((a, b) => {
+          const recent = (id) =>
+            Math.max(
+              0,
+              ...store.data.reactions
+                .filter(
+                  (r) =>
+                    r.ideaId === id &&
+                    !r.deletedAt &&
+                    ["like", "favorite"].includes(r.reaction),
+                )
+                .map((r) => r.updatedAt),
+            );
+          return recent(b.id) - recent(a.id);
+        })
+        .map((i) => i.id);
+      swipeView();
+      break;
+    case "swipe-next":
+      swipeDeck.shift();
+      swipeView();
+      break;
+    case "swipe-add":
+      await action("add-plan", el);
+      swipeDeck.shift();
+      swipeView();
+      break;
+    case "surprise":
+      sheet(
+        `<h2>Какой вечер соберём?</h2><form id="surprise-form"><label>Где<select name="location"><option>Дома</option><option>На улице</option><option value="">Где угодно</option></select></label><label>Время<select name="minutes">${[30, 60, 120, 180, 240].map((n) => `<option value="${n}" ${n === 120 ? "selected" : ""}>${duration(n)}</option>`).join("")}</select></label><label>Настроение<select name="mood">${["", "Уютно", "Спокойно", "Весело", "Близко", "Активно", "Творчески", "Необычно"].map((m) => `<option value="${m}">${m || "Любое"}</option>`).join("")}</select></label><p class="muted">Сердечки и суперлайки в приоритете.${state.draft.length ? " Текущая сборка будет заменена; сохранённые планы останутся." : ""}</p><button class="btn primary wide" type="submit">Собрать вечер</button></form>`,
+      );
       break;
     case "save-plan":
       if (!state.draft.length) return;
@@ -408,50 +502,26 @@ async function action(a, el) {
       if (store.matches.length) detail(shuffle(store.matches)[0].id);
       break;
     case "game":
-      game = {
-        title: ideaById(id).title,
-        index: 0,
-        kind:
-          id === "builtin-games-1"
-            ? "truth"
-            : id === "builtin-questions-2"
-              ? "choice"
-              : id === "builtin-questions-3"
-                ? "likely"
-                : "questions",
-        truthOrDare: id === "builtin-games-1",
-      };
-      game.order = shuffle(
-        Array.from(
-          {
-            length:
-              game.kind === "truth"
-                ? truths.length
-                : game.kind === "choice"
-                  ? choices.length
-                  : game.kind === "likely"
-                    ? likely.length
-                    : questions.length,
-          },
-          (_, n) => n,
-        ),
+      startGame(
+        id === "builtin-games-1"
+          ? "mixed"
+          : id === "builtin-questions-2"
+            ? "choice"
+            : id === "builtin-questions-3"
+              ? "likely"
+              : "questions",
       );
-      gameView();
       break;
-    case "truth":
-    case "dare":
-      game.kind = a;
+    case "play":
+      startGame(id);
+      break;
+    case "restart-game":
+      game.order = shuffle(gamePool(game.kind));
       game.index = 0;
-      game.order = shuffle(
-        Array.from(
-          { length: a === "truth" ? truths.length : dares.length },
-          (_, n) => n,
-        ),
-      );
       gameView();
       break;
     case "next-question":
-      game.index++;
+      game.index = (game.index || 0) + 1;
       gameView();
       break;
     case "tasks":
@@ -600,10 +670,41 @@ document.addEventListener("submit", async (e) => {
         render();
         break;
       }
+      case "surprise-form": {
+        const pool = store.ideas.filter(
+          (i) =>
+            (!fields.location ||
+              i.location === fields.location ||
+              i.location === "Где угодно") &&
+            (!fields.mood || i.mood === fields.mood),
+        );
+        const picked = surprise(pool, {
+          location: fields.location,
+          minutes: Number(fields.minutes),
+          score: (i) => preference(store, i),
+        });
+        if (!picked.length)
+          throw Error(
+            "Нет подходящих идей. Попробуйте другое настроение или больше времени",
+          );
+        state.draft = picked;
+        await persistDraft();
+        closeSheet();
+        navigate("build");
+        toast("Ваш вечер готов ♥");
+        break;
+      }
       case "idea-form":
         if (!fields.title.trim()) throw Error("Добавьте название идеи");
         await store.save("ideas", {
           ...fields,
+          photo: undefined,
+          image: fields.removeImage
+            ? ""
+            : await readPhoto(
+                form.elements.photo.files[0],
+                ideaById(form.dataset.id)?.image,
+              ),
           id: form.dataset.id || undefined,
           title: fields.title.trim(),
           duration: Number(fields.duration) || 30,
@@ -657,6 +758,7 @@ document.addEventListener("submit", async (e) => {
         if (!fields.title.trim()) throw Error("Напишите задание");
         await store.save("customTasks", {
           title: fields.title.trim(),
+          kind: fields.kind,
           description: "",
         });
         tasksSheet();
@@ -754,7 +856,7 @@ window.addEventListener("hashchange", () => {
   const tab = location.hash.slice(1);
   if (
     store &&
-    ["ideas", "build", "matches", "profile"].includes(tab) &&
+    ["ideas", "build", "matches", "games", "profile"].includes(tab) &&
     tab !== state.tab
   ) {
     state.tab = tab;
@@ -789,3 +891,122 @@ try {
   app.innerHTML =
     '<main class="onboarding"><h1>Не получилось открыть хранилище</h1><p>Разрешите сайту сохранять данные и обновите страницу. Ваши идеи не будут потеряны из-за несохранённых изменений.</p><button class="btn primary" onclick="location.reload()">Попробовать снова</button></main>';
 }
+
+async function readPhoto(file, previous = "") {
+  if (!file) return previous;
+  if (!/^image\/(jpeg|png|webp)$/.test(file.type) || file.size > 10_000_000)
+    throw Error("Выберите JPG, PNG или WebP до 10 МБ");
+  const bitmap = await createImageBitmap(file);
+  const canvas = document.createElement("canvas"),
+    ratio = Math.min(1, 480 / Math.max(bitmap.width, bitmap.height));
+  canvas.width = Math.max(1, Math.round(bitmap.width * ratio));
+  canvas.height = Math.max(1, Math.round(bitmap.height * ratio));
+  canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  bitmap.close();
+  let image;
+  for (const quality of [0.8, 0.6, 0.4, 0.2]) {
+    image = canvas.toDataURL("image/jpeg", quality);
+    if (image.length < 48000) return image;
+  }
+  throw Error("Картинка слишком сложная. Выберите более простое изображение");
+}
+let press,
+  suppressLike = false,
+  swipeTouch;
+document.addEventListener("pointerdown", (e) => {
+  const heart = e.target.closest('[data-action="like"]');
+  if (heart) {
+    const x = e.clientX,
+      y = e.clientY;
+    press = {
+      x,
+      y,
+      timer: setTimeout(async () => {
+        suppressLike = heart.dataset.id;
+        setTimeout(() => (suppressLike = false), 1000);
+        try {
+          await store.react(
+            heart.dataset.id,
+            store.reaction(heart.dataset.id) === "favorite"
+              ? "like"
+              : "favorite",
+          );
+          if (document.querySelector("#sheet").open) detail(heart.dataset.id);
+          toast("Суперлайк обновлён ♥★");
+        } catch (err) {
+          toast(err.message);
+        }
+      }, 550),
+    };
+  }
+  const card = e.target.closest("#swipe-card");
+  if (card) swipeTouch = { x: e.clientX, y: e.clientY, id: card.dataset.id };
+});
+document.addEventListener("pointermove", (e) => {
+  if (press && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 12) {
+    clearTimeout(press.timer);
+    press = null;
+  }
+});
+document.addEventListener("pointerup", async (e) => {
+  if (press) {
+    clearTimeout(press.timer);
+    press = null;
+  }
+  if (swipeTouch) {
+    const t = swipeTouch;
+    swipeTouch = null;
+    if (
+      Math.abs(e.clientX - t.x) > 65 &&
+      Math.abs(e.clientX - t.x) > Math.abs(e.clientY - t.y) * 1.3
+    ) {
+      try {
+        if (e.clientX > t.x)
+          await action("add-plan", { dataset: { id: t.id } });
+        swipeDeck.shift();
+        swipeView();
+      } catch (err) {
+        toast(err.message);
+      }
+    }
+  }
+});
+document.addEventListener("pointercancel", () => {
+  if (press) clearTimeout(press.timer);
+  press = null;
+  swipeTouch = null;
+  suppressLike = false;
+});
+document.addEventListener(
+  "click",
+  (e) => {
+    if (
+      suppressLike &&
+      e.target.closest('[data-action="like"]')?.dataset.id === suppressLike
+    ) {
+      suppressLike = false;
+      e.stopImmediatePropagation();
+      e.preventDefault();
+    }
+  },
+  true,
+);
+let loadingRecommendations = false;
+window.addEventListener(
+  "scroll",
+  () => {
+    const more = document.querySelector("#recommendation-more");
+    if (
+      !loadingRecommendations &&
+      state.tab === "build" &&
+      more &&
+      more.getBoundingClientRect().top < innerHeight + 200
+    ) {
+      loadingRecommendations = true;
+      state.suggestLimit = (state.suggestLimit || 12) + 12;
+      render();
+      requestAnimationFrame(() => (loadingRecommendations = false));
+    }
+  },
+  { passive: true },
+);

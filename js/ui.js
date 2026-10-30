@@ -7,6 +7,7 @@ export const esc = (v) =>
       ],
   );
 const paths = {
+  games: "M6 8h12l4 11-4 2-4-5h-4l-4 5-4-2L6 8ZM6 12h4m-2-2v4m8-2h.1m2 2h.1",
   heart:
     "M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z",
   idea: "M9 18h6m-5 3h4M8 14c-5-4-2-12 4-12s9 8 4 12l-1 2H9l-1-2Z",
@@ -49,6 +50,12 @@ export function art(idea, cls = "") {
   const file = String(idea.image || "").match(
     /^\.\/assets\/([a-z]+)\.svg$/,
   )?.[1];
+  if (
+    /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(
+      idea.image || "",
+    )
+  )
+    return `<img class="art user-art ${cls}" src="${esc(idea.image)}" alt="" loading="lazy">`;
   return file && allowed.includes(file)
     ? `<img class="art ${cls}" src="./assets/${file}.svg" alt="" loading="lazy">`
     : `<div class="art emoji-art ${cls}" aria-hidden="true">${esc(idea.icon || "✦")}</div>`;
@@ -81,7 +88,7 @@ export function closeSheet() {
 export function card(idea, store, { match = false } = {}) {
   const reaction = store.reaction(idea.id),
     liked = ["like", "favorite"].includes(reaction);
-  return `<article class="idea-card" data-idea="${esc(idea.id)}"><button class="art-button" data-action="detail" data-id="${esc(idea.id)}" aria-label="Открыть: ${esc(idea.title)}">${art(idea)}</button><div class="card-info"><button class="title-button" data-action="detail" data-id="${esc(idea.id)}"><h3>${esc(idea.title)}</h3></button><p>${esc(idea.description)}</p><div class="tags"><span>${icon("clock")}${duration(idea.duration || 30)}</span><span>${icon("home")}${esc(idea.location || "Дома")}</span><span class="mood">${esc(idea.mood || "Уютно")}</span></div>${match ? '<div class="match-label">♡ Понравилось вам обоим</div>' : ""}<div class="card-actions">${btn(icon("bookmark") + " В план", "add-plan", "soft", `data-id="${esc(idea.id)}"`)}<button class="icon-btn skip" data-action="skip" data-id="${esc(idea.id)}" aria-label="Пропустить: ${esc(idea.title)}">${icon("skip")}</button></div></div><button class="icon-btn like ${liked ? "liked" : ""}" data-action="like" data-id="${esc(idea.id)}" aria-label="${liked ? "Убрать симпатию" : "Нравится"}: ${esc(idea.title)}" aria-pressed="${liked}">${icon("heart")}</button></article>`;
+  return `<article class="idea-card" data-idea="${esc(idea.id)}"><button class="art-button" data-action="detail" data-id="${esc(idea.id)}" aria-label="Открыть: ${esc(idea.title)}">${art(idea)}</button><div class="card-info"><button class="title-button" data-action="detail" data-id="${esc(idea.id)}"><h3>${esc(idea.title)}</h3></button><p>${esc(idea.description)}</p><div class="tags"><span>${icon("clock")}${duration(idea.duration || 30)}</span><span>${icon("home")}${esc(idea.location || "Дома")}</span><span class="mood">${esc(idea.mood || "Уютно")}</span></div>${match ? '<div class="match-label">♡ Понравилось вам обоим</div>' : ""}<div class="card-actions">${btn(icon("bookmark") + " В план", "add-plan", "soft", `data-id="${esc(idea.id)}"`)}</div></div><button class="icon-btn like ${liked ? "liked" : ""}" data-action="like" data-id="${esc(idea.id)}" aria-label="${liked ? "Убрать симпатию" : "Нравится"}: ${esc(idea.title)}" title="Нажмите — лайк; удерживайте — суперлайк" aria-pressed="${liked}">${reaction === "favorite" ? "♥★" : icon("heart")}</button></article>`;
 }
 export function empty(title, text, action = "ideas", label = "Найти идею") {
   return `<div class="empty"><span class="empty-icon">♡</span><h3>${title}</h3><p>${text}</p>${btn(label, action, "lavender")}</div>`;

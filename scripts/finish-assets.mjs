@@ -23,7 +23,7 @@ const files = [
 await writeFile(
   "service-worker.js",
   `// Increment CACHE when releasing updates. Cache is scoped to this installation path.
-const CACHE='vmeste-v1-'+self.registration.scope;
+const CACHE='vmeste-v2-'+self.registration.scope;
 const ASSETS=${JSON.stringify(files, null, 2)};
 self.addEventListener('install',event=>{event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(ASSETS)));});
 self.addEventListener('activate',event=>{event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith('vmeste-')&&k.endsWith(self.registration.scope)&&k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim()));});
