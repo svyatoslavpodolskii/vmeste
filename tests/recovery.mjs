@@ -166,18 +166,23 @@ try {
   await a.getByRole("button", { name: "Сбросить фильтры" }).click();
   console.log("PASS filters and reset");
   await nav(a, "Профиль");
-  await a.getByRole("button", { name: "Мои задания", exact: true }).click();
-  await a.getByLabel("Новое задание").fill("Проверенное задание");
+  await a
+    .getByRole("button", { name: "Наш пул вопросов и действий", exact: true })
+    .click();
+  await a.locator('#task-form select[name="kind"]').selectOption("dare");
+  await a.locator('#task-form input[name="title"]').fill("Проверенное задание");
   await a
     .locator("#task-form")
-    .getByRole("button", { name: "Добавить", exact: true })
+    .getByRole("button", { name: "Добавить в пул", exact: true })
     .click();
-  await a.getByRole("heading", { name: "Проверенное задание" }).waitFor();
   await a
-    .getByRole("button", { name: "Отметить готовым", exact: true })
-    .click();
-  await a.getByRole("button", { name: "Выполнено ✓", exact: true }).waitFor();
-  console.log("PASS custom task create and complete");
+    .getByRole("heading", { name: "Проверенное задание", exact: true })
+    .waitFor();
+  await a.locator(".task-list [data-action=delete-task]").last().click();
+  await a
+    .getByRole("heading", { name: "Проверенное задание", exact: true })
+    .waitFor({ state: "detached" });
+  console.log("PASS shared game pool create and delete");
 } finally {
   await browser.close();
 }

@@ -7,7 +7,7 @@ const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
 const errors = [];
 page.on("pageerror", (e) => errors.push(e.message));
 try {
-  await page.goto("http://127.0.0.1:4173");
+  await page.goto(process.env.VMESTE_BASE || "http://127.0.0.1:4173");
   await page.getByLabel("Как вас зовут?").fill("Тест");
   await page.locator("#onboard-form button").click();
   await page.locator('[data-action="ideas"]').last().click();
