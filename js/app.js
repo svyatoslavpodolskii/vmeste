@@ -879,14 +879,6 @@ try {
       await enter(roomId);
     else render();
   } else render();
-  if ("serviceWorker" in navigator)
-    navigator.serviceWorker
-      .register("./service-worker.js")
-      .catch(() =>
-        toast(
-          "Офлайн-режим пока недоступен. Попробуйте открыть приложение ещё раз.",
-        ),
-      );
 } catch {
   app.innerHTML =
     '<main class="onboarding"><h1>Не получилось открыть хранилище</h1><p>Разрешите сайту сохранять данные и обновите страницу. Ваши идеи не будут потеряны из-за несохранённых изменений.</p><button class="btn primary" onclick="location.reload()">Попробовать снова</button></main>';
@@ -1010,3 +1002,10 @@ window.addEventListener(
   },
   { passive: true },
 );
+
+window.vmesteBeforeUpdate = async () => {
+  if (store) {
+    await store.queue;
+    await persistDraft();
+  }
+};
