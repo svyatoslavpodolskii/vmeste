@@ -1,14 +1,15 @@
 // Cache version follows package.json. Cache is scoped to this installation path.
-const CACHE='vmeste-3.0.1-'+self.registration.scope;
+const CACHE='vmeste-3.1.0-'+self.registration.scope;
 const ASSETS=[
   "./",
   "./index.html",
   "./manifest.json",
-  "./js/update.js?v=3.0.1",
+  "./js/update.js?v=3.1.0",
   "./css/styles.css",
   "./js/app.js",
   "./js/auth.js",
   "./js/db.js",
+  "./js/frequency.js",
   "./js/game-pools.js",
   "./js/moments.js",
   "./js/party.js",

@@ -1,6 +1,6 @@
 {
   "name": "vmeste",
-  "version": "3.0.1",
+  "version": "3.1.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -11,7 +11,8 @@
     "test:party": "node tests/party-live.mjs",
     "test:pwa": "node tests/pwa-update.mjs",
     "test:museum": "node tests/museum-live.mjs",
-    "test:sound": "node tests/sound.mjs"
+    "test:sound": "node tests/sound.mjs",
+    "test:frequency": "node tests/frequency-live.mjs"
   },
   "devDependencies": {
     "fake-indexeddb": "6.2.4",

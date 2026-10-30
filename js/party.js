@@ -1,8 +1,17 @@
-﻿import { esc, btn, sheet, toast, closeSheet } from "./ui.js";
+import {
+  nextFrequency,
+  revealFrequency,
+  frequencyCommand,
+  frequencyPublic,
+  frequencyScreen,
+  frequencyControls,
+} from "./frequency.js";
+import { esc, btn, sheet, toast, closeSheet } from "./ui.js";
 import { NatureSound, soundLayers } from "./sound.js";
 import { sessionDeck, cardKey, playedHistory } from "./game-pools.js";
 export const partyKinds = [
   "museum",
+  "frequency",
   "word",
   "poem",
   "draw",
@@ -13,6 +22,7 @@ export const partyKinds = [
 ];
 export const partyTitles = {
   museum: "Музей невозможного",
+  frequency: "Секретная частота",
   word: "Созвучия",
   poem: "Стих по кусочкам",
   draw: "Нарисуй — объясни",
@@ -156,7 +166,8 @@ export function partyScreen(f) {
   const p = f.public || {},
     players = Array.isArray(p.players) ? p.players.slice(0, 10) : [];
   let body = "";
-  if (f.kind === "museum") body = museumScreen(f, p, players);
+  if (f.kind === "frequency") body = frequencyScreen(f);
+  else if (f.kind === "museum") body = museumScreen(f, p, players);
   else if (f.kind === "race")
     body = `<div class="race-track">${players.map((u) => `<div class="race-lane"><span>${esc(u.name)}</span><div class="race-road"><b style="left:${clamp((p.positions?.[u.id] || 0) / 30) * 87}%">${esc(u.avatar || "✨")}</b><i>⚑</i></div><small>${p.times?.[u.id] ? `${(p.times[u.id] / 1000).toFixed(1)} с` : "Левый · правый · левый"}</small></div>`).join("")}</div>`;
   else if (f.kind === "draw")
@@ -186,7 +197,7 @@ export function partyScreen(f) {
   else if (["meditation", "soundgarden"].includes(f.kind))
     body = `<div class="sound-universe" style="--warmth:${Math.round((p.warmth || 0.5) * 90)}deg"><i></i><i></i><i></i><span>${f.kind === "meditation" ? "ДЫШИТЕ В СВОЁМ РИТМЕ" : "КАЖДЫЙ ЖЕСТ ОТЗЫВАЕТСЯ"}</span></div><p class="sound-caption">${Object.keys(p.contributors || {}).length} партии · один общий пейзаж</p>`;
   else body = "";
-  return `<section class="party-public party-${esc(f.kind)}"><h2>${esc(f.title)}</h2><p class="party-prompt">${esc(f.text)}</p>${body}<div class="party-progress">${esc(f.progress || "")}${!["meditation", "soundgarden", "word", "poem", "museum"].includes(f.kind) ? timer(f) : ""}</div></section>`;
+  return `<section class="party-public party-${esc(f.kind)}"><h2>${esc(f.title)}</h2><p class="party-prompt">${esc(f.text)}</p>${body}<div class="party-progress">${esc(f.progress || "")}${!["meditation", "soundgarden", "word", "poem", "museum", "frequency"].includes(f.kind) ? timer(f) : ""}</div></section>`;
 }
 export class PartyGames {
   constructor(options) {
@@ -221,6 +232,10 @@ export class PartyGames {
       }
     });
     document.addEventListener("input", (e) => {
+      if (e.target.matches("[data-frequency-slider]")) {
+        const output = document.querySelector(".frequency-reading");
+        if (output) output.textContent = e.target.value;
+      }
       if (e.target.matches("[data-sound-mood]")) {
         clearTimeout(this.moodTimer);
         const value = e.target.value,
@@ -296,6 +311,22 @@ export class PartyGames {
       answers: {},
       moves: 0,
     });
+    if (kind === "frequency") {
+      if (players.length < 2) {
+        this.state = null;
+        toast("Для частоты нужны хотя бы двое онлайн.");
+        return;
+      }
+      Object.assign(s, {
+        turn: 0,
+        totalRounds: Math.max(4, players.length),
+        usedAxes: [],
+        log: [],
+        score: 0,
+      });
+      nextFrequency(s, this.store);
+      this.mark("Частота: " + s.axis.join(" · "));
+    }
     if (kind === "museum") {
       if (players.length < 2) {
         this.state = null;
@@ -421,6 +452,13 @@ export class PartyGames {
           gains: s.gains,
         });
       if (s.finished) p.gallery = s.gallery;
+    }
+    if (s.kind === "frequency") {
+      Object.assign(p, frequencyPublic(s));
+      text = s.finished
+        ? "Вы научились слышать друг друга чуть точнее."
+        : "Один образ. Разные ощущения. Одна общая частота.";
+      progress = `${s.turn + 1} / ${s.totalRounds} волн · общее созвучие ${s.score || 0}/100`;
     }
     if (s.kind === "word") {
       text = String(s.prompt);
@@ -549,6 +587,7 @@ export class PartyGames {
     if (!s) return;
     for (const u of s.players) {
       let payload = { round: s.round, turn: s.turn || 0 };
+      if (s.kind === "frequency" && u.id === s.lead) payload.target = s.target;
       if (["draw", "museum"].includes(s.kind) && u.id === s.drawer)
         payload.word = s.secret;
       if (s.kind === "museum") {
@@ -592,6 +631,10 @@ export class PartyGames {
       s.finished
     )
       return;
+    if (s.kind === "frequency") {
+      if (frequencyCommand(s, sender, input)) this.broadcast();
+      return;
+    }
     if (s.kind === "museum") {
       if (
         input.action === "museum-caption" &&
@@ -734,6 +777,20 @@ export class PartyGames {
     }
     this.broadcast();
   }
+  async frequencyNext() {
+    const s = this.state;
+    if (!s || s.kind !== "frequency" || s.phase !== "reveal") return;
+    if (s.turn + 1 >= s.totalRounds) {
+      await this.finish();
+      return;
+    }
+    s.turn++;
+    nextFrequency(s, this.store);
+    this.mark("Частота: " + s.axis.join(" · "));
+    this.broadcast();
+    this.privateInstructions();
+    this.render(true);
+  }
   museumVote() {
     const s = this.state,
       clean = (v) =>
@@ -829,7 +886,10 @@ export class PartyGames {
     if (!s || s.finished) return;
     s.finished = true;
     s.elapsed = Date.now() - s.started;
-    if (!["draw", "beacon", "race", "museum"].includes(s.kind)) {
+    if (
+      (s.kind === "frequency" && s.log.length < s.totalRounds) ||
+      !["draw", "beacon", "race", "museum", "frequency"].includes(s.kind)
+    ) {
       this.audio?.stop();
       this.broadcast();
       return;
@@ -840,7 +900,9 @@ export class PartyGames {
       moves: s.moves,
       players: s.players.map((p) => p.id),
       createdAt: Date.now(),
-      results: s.kind === "museum" ? { ...s.scores } : undefined,
+      results: ["museum", "frequency"].includes(s.kind)
+        ? { ...s.scores }
+        : undefined,
       times: s.kind === "race" ? { ...s.times } : undefined,
       gallery: s.kind === "museum" ? s.gallery : undefined,
     };
@@ -905,11 +967,17 @@ export class PartyGames {
     const member = p.players.some((u) => u.id === this.userId),
       secret = this.secrets.get(f.round + ":" + (p.turn || 0)) || {};
     let html = "";
-    if (f.finished)
-      html = `${["draw", "beacon", "race", "museum"].includes(f.kind) ? `<div id="party-records">${this.records()}</div>` : '<div class="session-done"><h3>Спасибо за это время</h3><p>Можно вернуться сюда, когда снова захочется.</p></div>'}${this.hosting ? '<button class="btn primary wide" data-party="again">Ещё одна партия</button>' : ""}`;
+    if (f.finished && f.kind === "frequency" && p.cancelled)
+      html = this.hosting
+        ? '<button class="btn primary wide" data-party="again">Начать новую партию</button>'
+        : "";
+    else if (f.finished)
+      html = `${["draw", "beacon", "race", "museum", "frequency"].includes(f.kind) ? `<div id="party-records">${this.records()}</div>` : '<div class="session-done"><h3>Спасибо за это время</h3><p>Можно вернуться сюда, когда снова захочется.</p></div>'}${this.hosting ? '<button class="btn primary wide" data-party="again">Ещё одна партия</button>' : ""}`;
     else if (!member)
       html =
         '<p class="muted center">Следующий раунд — и вы с нами. Сейчас можно смотреть общий экран.</p>';
+    else if (f.kind === "frequency")
+      html = frequencyControls(f, this.userId, secret);
     else if (f.kind === "museum") {
       if (p.phase === "draw")
         html =
@@ -968,6 +1036,11 @@ export class PartyGames {
       html = `<div class="sound-start"><button class="btn primary wide" data-party="sound">${this.audio?.started ? "Выключить звук здесь" : "Включить звук на этом устройстве"}</button><p class="muted">На каждом устройстве — своя партия. Начните тихо, затем подберите комфортную громкость.</p><label>Громкость только здесь<input type="range" data-sound-volume min="0" max="1" step=".01" value="${this.audio?.level ?? 0.65}"></label></div>${f.kind === "soundgarden" ? `<div class="sound-pads">${soundLayers.map((name, i) => `<button data-party="layer" data-index="${i}" aria-pressed="${!!mine.layers[i]}"><span>${["🌊", "🌧️", "🍃", "🌬️", "🌌", "🫧", "🌤️", "🌑"][i]}</span>${name}</button>`).join("")}</div><div id="sound-touch" class="sound-touch" tabindex="0" aria-label="Касания меняют тепло и пространство"><span>Коснитесь и двигайтесь<br>Ваш жест меняет общий пейзаж</span></div>` : ""}<div class="mood-sliders">${["Тепло", "Движение", "Пространство", "Мягкость"].map((label, i) => `<label>${label}<input type="range" min="0" max="1" step=".01" data-sound-mood="${i}" value="${mine.moods[i]}"></label>`).join("")}</div><p class="fine">Процедурные природные текстуры · разные партии · плавные переходы · без микрофона</p>`;
     }
     if (this.hosting && !f.finished) {
+      if (f.kind === "frequency" && p.phase === "reveal")
+        html += `<button class="btn primary wide" data-party="frequency-next">${p.turn + 1 >= p.totalRounds ? "Наше созвучие →" : "Следующая волна →"}</button>`;
+      if (f.kind === "frequency" && p.phase === "guess")
+        html +=
+          '<details class="game-rules"><summary>Если кто-то отошёл</summary><button class="btn soft wide" data-party="frequency-reveal">Открыть принятые догадки</button></details>';
       if (["word", "poem"].includes(f.kind))
         html += `<button class="btn lavender wide" data-party="reveal">${p.revealed ? "Следующий раунд" : "Открыть всем ответы"}</button>`;
       if (f.kind === "museum" && ["draw", "captions", "vote"].includes(p.phase))
@@ -994,7 +1067,7 @@ export class PartyGames {
           p.arcadeRecord.players.length === f.public.players.length,
       )
       .sort((a, b) =>
-        f.kind === "museum"
+        ["museum", "frequency"].includes(f.kind)
           ? (b.arcadeRecord.results?.[this.userId] || 0) -
             (a.arcadeRecord.results?.[this.userId] || 0)
           : (a.arcadeRecord.times?.[this.userId] / 1000 ||
@@ -1003,11 +1076,11 @@ export class PartyGames {
               b.arcadeRecord.seconds),
       );
     const place = entries.findIndex((p) => p.id.endsWith(f.round)) + 1;
-    return `<div class="record-sheet"><h3>${place ? "№ " + place + " в ваших результатах" : "Ваши результаты"}</h3><p>${f.kind === "museum" ? `${f.public.scores?.[this.userId] || 0} очков за выставку` : `${((f.public.times?.[this.userId] || f.elapsed) / 1000).toFixed(1)} с · без лимита, с вашим ритмом`}</p>${entries
+    return `<div class="record-sheet"><h3>${place ? "№ " + place + " в ваших результатах" : "Ваши результаты"}</h3><p>${["museum", "frequency"].includes(f.kind) ? `${f.public.scores?.[this.userId] || 0} ${f.kind === "frequency" ? "/100 · общее созвучие" : "очков за выставку"}` : `${((f.public.times?.[this.userId] || f.elapsed) / 1000).toFixed(1)} с · без лимита, с вашим ритмом`}</p>${entries
       .slice(0, 5)
       .map(
         (r, i) =>
-          `<p><b>${i + 1}.</b> ${f.kind === "museum" ? `${r.arcadeRecord.results?.[this.userId] || 0} очков` : `${(r.arcadeRecord.times?.[this.userId] / 1000 || r.arcadeRecord.seconds).toFixed(1)} с`} · ${r.arcadeRecord.players.length} участников${r.arcadeRecord.gallery ? ` <button class="btn text" data-party="view-record" data-id="${esc(r.id)}">Выставка</button>` : ""}</p>`,
+          `<p><b>${i + 1}.</b> ${["museum", "frequency"].includes(f.kind) ? `${r.arcadeRecord.results?.[this.userId] || 0} ${f.kind === "frequency" ? "/100" : "очков"}` : `${(r.arcadeRecord.times?.[this.userId] / 1000 || r.arcadeRecord.seconds).toFixed(1)} с`} · ${r.arcadeRecord.players.length} участников${r.arcadeRecord.gallery ? ` <button class="btn text" data-party="view-record" data-id="${esc(r.id)}">Выставка</button>` : ""}</p>`,
       )
       .join(
         "",
@@ -1024,7 +1097,7 @@ export class PartyGames {
         records
           .map(
             (r) =>
-              `<article class="record-history-card"><div><span class="eyebrow">${new Date(r.createdAt).toLocaleDateString("ru-RU")} · ${r.arcadeRecord.players.length} участников</span><h3>${esc(r.title)}</h3><p>${r.arcadeRecord.kind === "museum" ? `${r.arcadeRecord.results?.[this.userId] || 0} очков` : `${(r.arcadeRecord.times?.[this.userId] / 1000 || r.arcadeRecord.seconds).toFixed(1)} с`}</p></div>${
+              `<article class="record-history-card"><div><span class="eyebrow">${new Date(r.createdAt).toLocaleDateString("ru-RU")} · ${r.arcadeRecord.players.length} участников</span><h3>${esc(r.title)}</h3><p>${["museum", "frequency"].includes(r.arcadeRecord.kind) ? `${r.arcadeRecord.results?.[this.userId] || 0} ${r.arcadeRecord.kind === "frequency" ? "/100" : "очков"}` : `${(r.arcadeRecord.times?.[this.userId] / 1000 || r.arcadeRecord.seconds).toFixed(1)} с`}</p></div>${
                 r.arcadeRecord.gallery
                   ? `<div class="record-thumbs">${r.arcadeRecord.gallery
                       .slice(0, 3)
@@ -1077,6 +1150,14 @@ export class PartyGames {
         this.viewRecord(el.dataset.id, action === "screen-record");
         return;
       }
+      if (action === "frequency-next" && this.hosting)
+        await this.frequencyNext();
+      if (
+        action === "frequency-reveal" &&
+        this.hosting &&
+        revealFrequency(this.state)
+      )
+        this.broadcast();
       if (action === "museum-caption") this.input({ action: "museum-caption" });
       if (action === "museum-vote")
         this.input({ action: "museum-vote", choice: el.dataset.choice });

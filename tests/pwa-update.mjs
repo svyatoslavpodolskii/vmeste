@@ -160,7 +160,7 @@ try {
   await page.locator('[data-action="games"]').waitFor({ timeout: 30000 });
   await page.locator('[data-action="profile"]').last().click();
   await page.waitForFunction(
-    () => document.body.textContent.includes("версия 3.0.1"),
+    () => document.body.textContent.includes("версия 3.1.0"),
     {},
     { timeout: 30000 },
   );
@@ -180,11 +180,11 @@ try {
   preserved(await snapshot(), before);
   await page.reload();
   await page.waitForFunction(() =>
-    document.body.textContent.includes("версия 3.0.1"),
+    document.body.textContent.includes("версия 3.1.0"),
   );
   preserved(await snapshot(), before);
   console.log(
-    "PASS PWA 1.0 → 3.0.1 with old tab open: identity, room, ideas, likes, saved plans, tasks and draft unchanged; manual/offline checks and offline restart",
+    "PASS PWA 1.0 → 3.1.0 with old tab open: identity, room, ideas, likes, saved plans, tasks and draft unchanged; manual/offline checks and offline restart",
   );
 } finally {
   await browser.close();
