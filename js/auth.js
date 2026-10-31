@@ -1,4 +1,5 @@
-﻿const encode = (value) => new TextEncoder().encode(JSON.stringify(value));
+import { GAME_PROTOCOL } from "./game-protocol.js";
+const encode = (value) => new TextEncoder().encode(JSON.stringify(value));
 const algorithm = { name: "ECDSA", namedCurve: "P-256" };
 const signing = { name: "ECDSA", hash: "SHA-256" };
 const symbols = [
@@ -173,6 +174,7 @@ class Admission {
     this.hello = {
       type: "auth-hello",
       protocol: 3,
+      gameProtocol: GAME_PROTOCOL,
       roomId: auth.store.roomId,
       memberId: auth.record.memberId,
       name: (me?.displayName || "Участник").slice(0, 60),

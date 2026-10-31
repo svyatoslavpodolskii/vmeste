@@ -127,8 +127,17 @@ try {
   assert.equal(await b.locator(".meditation-point:not([disabled])").count(), 2);
   assert.equal(await b.locator(".meditation-point[disabled]").count(), 2);
   assert.equal(await b.locator(".voice-tabs").count(), 0);
+  assert.equal(await b.locator("[data-constellation]").count(), 6);
   await a.locator('#ambient-player [data-party="player-open"]').click();
   await a.waitForFunction(() => !document.querySelector(".voice-tabs"));
+  assert.equal(await a.locator("[data-constellation]").count(), 6);
+  const aStars = await a
+    .locator("[data-constellation]")
+    .evaluateAll((nodes) => nodes.map((n) => n.dataset.constellation));
+  const bStars = await b
+    .locator("[data-constellation]")
+    .evaluateAll((nodes) => nodes.map((n) => n.dataset.constellation));
+  assert.equal(new Set([...aStars, ...bStars]).size, 12);
   console.log(
     "PASS entering same instrument joins solo session and restores distinct two-person roles",
   );

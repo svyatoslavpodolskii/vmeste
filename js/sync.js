@@ -218,6 +218,38 @@ export function validRecord(table, r, roomId) {
       )
         return false;
     }
+    if (
+      r.arcadeRecord?.kind === "beacon" &&
+      r.arcadeRecord.rulesVersion === 2
+    ) {
+      const a = r.arcadeRecord;
+      if (
+        ![3, 6, 9].includes(a.beaconLength) ||
+        !Number.isFinite(a.teamScore) ||
+        a.teamScore < 0 ||
+        a.teamScore > a.beaconLength * 100 ||
+        !Array.isArray(a.journal) ||
+        a.journal.length !== a.beaconLength ||
+        a.journal.some(
+          (j) =>
+            typeof j.module !== "string" ||
+            !Number.isFinite(j.score) ||
+            j.score < 0 ||
+            j.score > 100,
+        ) ||
+        !a.harbor ||
+        !Array.isArray(a.harbor.ships) ||
+        a.harbor.ships.length > 5 ||
+        a.harbor.ships.some(
+          (s) =>
+            typeof s.name !== "string" ||
+            s.name.length > 100 ||
+            typeof s.route !== "string" ||
+            s.route.length > 100,
+        )
+      )
+        return false;
+    }
     return (
       typeof r.title === "string" &&
       r.title.length <= 160 &&

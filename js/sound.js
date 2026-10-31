@@ -1,3 +1,4 @@
+import { phraseNotes, compositionState } from "./composition.js";
 import { quad } from "./sound-controls.js";
 export const soundLayers = [
   "Берег",
@@ -191,6 +192,25 @@ export class NatureSound {
   apply(contributors, ownId, mode) {
     if (!this.context || !this.started) return;
     this.settings = { contributors, ownId, mode };
+    const signature = Object.values(contributors)
+      .map((c) =>
+        (c.pads || [])
+          .map((p) => p.map((v) => Math.round(v * 5)).join(","))
+          .join("/"),
+      )
+      .join(";");
+    const now = this.context.currentTime;
+    if (
+      this.positionSignature &&
+      signature !== this.positionSignature &&
+      now > (this.nextTouch || 0)
+    ) {
+      const shared = compositionState(contributors);
+      const phrase = phraseNotes(shared.branch * 3, contributors, 0.65);
+      this.note({ ...phrase[0], duration: 1.8, gain: 0.032 }, now);
+      this.nextTouch = now + 0.32;
+    }
+    this.positionSignature = signature;
     this.evolve(true);
   }
   evolve(touch = false) {
@@ -252,7 +272,7 @@ export class NatureSound {
           (sum, [, c]) =>
             sum +
             (c.stars || [])
-              .filter((s) => s.index === index && s.until > Date.now())
+              .filter((s) => s.index % 4 === index && s.until > Date.now())
               .reduce(
                 (n, s) =>
                   n + s.power * Math.min(1, (s.until - Date.now()) / 1200),
@@ -288,7 +308,9 @@ export class NatureSound {
       node.gain.gain.setTargetAtTime(
         Math.max(
           0.0001,
-          (layer + partner * 0.48) * (i === 4 ? 0.08 : i < 5 ? 0.4 : 0.3) * ebb,
+          (layer + partner * 0.48) *
+            (i === 4 ? 0.025 : i < 5 ? 0.13 : 0.22) *
+            ebb,
         ),
         t,
         responsive ? 0.16 : 1.2,
@@ -375,7 +397,45 @@ export class NatureSound {
       t,
       0.5,
     );
-    // One sustained voice per constellation: holding updates its envelope instead of stacking oscillators.
+    // Discrete, breathing phrases replace an indefinitely sustained high tone.
+    // The third and fourth pads control musical density and spatial movement.
+    this.nextMelody ||= 0;
+    if (t >= this.nextMelody) {
+      const shared = compositionState(contributors);
+      const phrases = entries.map(([id, c], seat) => {
+        const melody = c.pads?.[2] || [0.45, 0.5];
+        const motion = c.pads?.[3] || [0.35, 0.55];
+        return { id, c, seat, melody, motion };
+      });
+      for (const { c, seat, melody, motion } of phrases) {
+        const phrase = phraseNotes(
+          (seat * 3 + shared.branch) % 12,
+          contributors,
+          0.45 + melody[0] * 0.4,
+        );
+        const count = 1 + Math.floor(melody[0] * 3);
+        for (const note of phrase.slice(0, count)) {
+          this.note(
+            {
+              ...note,
+              frequency:
+                note.frequency *
+                (melody[1] > 0.7 ? 2 : melody[1] < 0.3 ? 0.5 : 1),
+              gain:
+                (note.gain * (mode === "meditation" ? 0.7 : 0.95)) /
+                Math.sqrt(entries.length),
+              duration: note.duration * (1 + (1 - motion[0]) * 0.8),
+              pan: note.pan * (0.25 + motion[1] * 0.75),
+            },
+            t + seat * 0.18 + note.delay,
+          );
+        }
+      }
+      const density =
+        phrases.reduce((n, p) => n + p.melody[0], 0) /
+        Math.max(1, phrases.length);
+      this.nextMelody = t + 2.4 + (1 - density) * 4;
+    }
     for (const [id, c] of entries)
       for (const star of c.stars || []) {
         const key = id + ":" + star.index;
@@ -384,55 +444,49 @@ export class NatureSound {
   }
   spark(star, role, key) {
     const ctx = this.context,
-      t = ctx.currentTime,
-      remaining = Math.max(0.2, Math.min(18, (star.until - Date.now()) / 1000));
-    this.starVoices ||= new Map();
-    const active = this.starVoices.get(key);
-    if (active) {
-      active.gain.gain.cancelScheduledValues(t);
-      active.gain.gain.setTargetAtTime(0.055 + star.power * 0.13, t, 0.06);
-      active.gain.gain.setTargetAtTime(
-        0.0001,
-        t + Math.min(0.4, remaining * 0.2),
-        Math.max(0.15, remaining / 4),
-      );
-      active.filter.frequency.setTargetAtTime(800 + star.power * 5000, t, 0.1);
-      active.osc.stop(t + remaining + 0.1);
-      active.harmonic.stop(t + remaining + 0.1);
-      return;
-    }
-    const osc = ctx.createOscillator(),
-      harmonic = ctx.createOscillator(),
-      gain = ctx.createGain(),
-      filter = ctx.createBiquadFilter();
-    osc.type = star.index % 2 ? "sine" : "triangle";
-    osc.frequency.value = [220, 330, 440, 660][(star.index + role) % 4];
-    osc.frequency.exponentialRampToValueAtTime(
-      osc.frequency.value * (star.index === 2 ? 1.5 : 1.003),
-      t + remaining,
+      now = ctx.currentTime;
+    this.starPhrases ||= new Map();
+    const next = this.starPhrases.get(key) || 0;
+    if (next > now) return;
+    const notes = phraseNotes(
+      star.index,
+      this.settings.contributors,
+      star.power,
     );
-    filter.type = "lowpass";
-    filter.frequency.value = 800 + star.power * 5000;
-    gain.gain.setValueAtTime(0.0001, t);
-    gain.gain.exponentialRampToValueAtTime(0.055 + star.power * 0.13, t + 0.06);
-    gain.gain.exponentialRampToValueAtTime(0.0001, t + remaining);
+    this.starPhrases.set(key, now + Math.max(2.8, notes.at(-1).delay + 1.6));
+    for (const note of notes) this.note(note, now + note.delay);
+  }
+  note(note, at) {
+    const ctx = this.context;
+    const osc = ctx.createOscillator(),
+      harmonic = ctx.createOscillator();
+    const gain = ctx.createGain(),
+      overtone = ctx.createGain();
+    const filter = ctx.createBiquadFilter(),
+      pan = ctx.createStereoPanner();
+    osc.type = "sine";
     harmonic.type = "sine";
-    harmonic.frequency.value =
-      osc.frequency.value * [1.5, 1.003, 2, 1.25][star.index];
-    const harmonicGain = ctx.createGain();
-    harmonicGain.gain.value = 0.28;
-    harmonic.connect(harmonicGain).connect(filter);
-    osc.connect(filter).connect(gain).connect(this.reverb);
-    gain.connect(this.master);
-    osc.start(t);
-    harmonic.start(t);
-    osc.stop(t + remaining + 0.1);
-    harmonic.stop(t + remaining + 0.1);
-    const entry = { osc, harmonic, gain, filter, harmonicGain };
-    this.starVoices.set(key, entry);
+    osc.frequency.value = note.frequency;
+    harmonic.frequency.value = note.frequency * (note.bright === 2 ? 3 : 2);
+    overtone.gain.value = note.bright === 1 ? 0.16 : 0.07;
+    filter.type = "lowpass";
+    filter.frequency.value = 1000 + note.bright * 450;
+    filter.Q.value = 0.5;
+    pan.pan.value = note.pan;
+    gain.gain.setValueAtTime(0.0001, at);
+    gain.gain.exponentialRampToValueAtTime(note.gain, at + 0.16);
+    gain.gain.exponentialRampToValueAtTime(0.0001, at + note.duration);
+    harmonic.connect(overtone).connect(filter);
+    osc.connect(filter).connect(gain).connect(pan);
+    pan.connect(this.master);
+    pan.connect(this.reverb);
+    osc.start(at);
+    harmonic.start(at);
+    osc.stop(at + note.duration + 0.05);
+    harmonic.stop(at + note.duration + 0.05);
     osc.onended = () => {
-      for (const node of Object.values(entry)) node.disconnect();
-      if (this.starVoices?.get(key) === entry) this.starVoices.delete(key);
+      for (const node of [osc, harmonic, gain, overtone, filter, pan])
+        node.disconnect();
     };
   }
 
@@ -467,5 +521,7 @@ export class NatureSound {
     this.context = null;
     this.nodes = [];
     this.starVoices?.clear();
+    this.starPhrases?.clear();
+    this.nextMelody = 0;
   }
 }

@@ -271,9 +271,11 @@ try {
   await close(b);
   await nav(a, "games");
   await a.locator('[data-action="play"][data-id="beacon"]').click();
+  await a.locator('[data-party="beacon-start"][data-length="3"]').click();
   await a.locator('[data-party="cancel-lobby"]').click();
   assert.equal(await a.locator("#sheet[open]").count(), 0);
   await a.locator('[data-action="play"][data-id="beacon"]').click();
+  await a.locator('[data-party="beacon-start"][data-length="3"]').click();
   await close(a);
   await a.locator('[data-action="end-empty-game"][data-id="beacon"]').click();
   assert.equal(

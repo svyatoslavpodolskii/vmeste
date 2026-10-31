@@ -1,5 +1,20 @@
+import { updateSoundConnections } from "./sound-controls.js";
+import { assignedConstellations } from "./composition.js";
 import { worldKinds, worldScreen } from "./worlds.js";
 import { TURN_WORLD, turnScreen } from "./turn-games.js";
+import {
+  BEACON_RULES,
+  initBeacon,
+  beaconPublic,
+  beaconSecret,
+  beaconCommand,
+} from "./beacon.js";
+import {
+  beaconHome,
+  beaconScreen,
+  beaconControls,
+  beaconRecordView,
+} from "./beacon-ui.js";
 import {
   initCircuit,
   circuitCommand,
@@ -211,13 +226,21 @@ export function partyScreen(f, screen = false) {
   if (!f) return "<p>Выберите игру на телефоне.</p>";
   if (worldKinds.includes(f.kind)) return worldScreen(f);
   if (f.kind === TURN_WORLD) return turnScreen(f);
+  if (f.kind === "exhibitworld")
+    return f.public?.recordKind === "museum"
+      ? partyScreen({ ...f, kind: "museum" }, screen)
+      : "<p>Сохранённая выставка</p>";
   const p = f.public || {},
     players = Array.isArray(p.players) ? p.players.slice(0, 10) : [];
   let body = "";
+  if (f.stage === "lobby" && f.finished)
+    return `<section class="session-done"><span class="eyebrow">СТОЛ ЗАКРЫТ</span><h2>${esc(f.title)}</h2><p>Эта партия завершена. Можно открыть новую игру из библиотеки.</p></section>`;
   if (f.stage === "lobby")
-    return `<section class="table-lobby"><span class="eyebrow">СОБИРАЕМСЯ ЗА ОДНИМ СТОЛОМ</span><h2>${esc(f.title)}</h2><p>Игра начнётся, когда присоединятся минимум ${p.minPlayers || 2} участника и все нажмут «Готов».</p><div class="lobby-players">${players.map((u) => `<div class="${p.readyPlayers?.includes(u.id) ? "is-ready" : ""}"><span>${esc(u.avatar)}</span><strong>${esc(u.name)}</strong><small>${p.readyPlayers?.includes(u.id) ? "Готов" : p.joined?.includes(u.id) ? "В комнате" : "Приглашён"}</small></div>`).join("")}</div><p class="fine">${p.requiresScreen ? `${p.screenCount ? "Общий экран подключён" : "Подключите ПК как общий экран — это часть игры"}` : "Один общий стол · одинаковые лобби объединяются автоматически"}</p></section>`;
+    return `<section class="table-lobby"><span class="eyebrow">СОБИРАЕМСЯ ЗА ОДНИМ СТОЛОМ</span><h2>${esc(f.title)}</h2><p>Игра начнётся, когда присоединятся минимум ${p.minPlayers || 2} участника и все нажмут «Готов».</p><div class="lobby-players">${players.map((u) => `<div class="${p.readyPlayers?.includes(u.id) ? "is-ready" : ""}"><span>${esc(u.avatar)}</span><strong>${esc(u.name)}</strong><small>${p.readyPlayers?.includes(u.id) ? "Готов" : p.joined?.includes(u.id) ? "В комнате" : "Приглашён"}</small></div>`).join("")}</div>${p.needsUpdate?.length ? `<div class="lobby-update"><span>${icon("settings")}</span><div><strong>Нужно обновить приложение</strong><p>На устройствах: ${p.needsUpdate.map(esc).join(", ")}. Откройте «Настройки» → «Обновление», затем вернитесь к столу. Ответы и история сохранятся.</p></div></div>` : ""}<p class="fine">${p.requiresScreen ? `${p.screenCount ? "Общий экран подключён" : "Подключите ПК как общий экран — это часть игры"}` : "Один общий стол · одинаковые лобби объединяются автоматически"}</p></section>`;
   if (f.kind === "race" && p.rulesVersion === CIRCUIT_VERSION)
-    body = circuitScreen(f);
+    return circuitScreen(f);
+  if (f.kind === "beacon" && p.rulesVersion === BEACON_RULES)
+    return beaconScreen(f, screen);
   else if ([...expeditionKinds, "race", "beacon"].includes(f.kind))
     body = expeditionScreen(f, screen);
   else if (deckKinds.includes(f.kind)) body = deckScreen(f);
@@ -281,6 +304,9 @@ export class PartyGames {
     window.addEventListener("vmeste-game-input", (e) =>
       this.command(e.detail.sender, e.detail.input),
     );
+    window.addEventListener("vmeste-game-capabilities", () => {
+      if (this.hosting && this.state?.stage === "lobby") this.broadcast();
+    });
     window.addEventListener("vmeste-game-private", (e) => {
       const p = e.detail;
       if (p) {
@@ -406,11 +432,33 @@ export class PartyGames {
       this.circuitMenu();
       return;
     }
+    if (kind === "beacon" && !launch.beacon) {
+      this.beaconMenu();
+      return;
+    }
     if (
-      kind === "race" &&
-      launch.circuit &&
+      ["race", "beacon"].includes(kind) &&
+      (launch.circuit || launch.beacon) &&
       this.tables.get(kind)?.frame.public.rulesVersion !== CIRCUIT_VERSION
     ) {
+      const old = this.tables.get(kind)?.frame;
+      if (old && !old.finished) {
+        if (old.controller !== this.userId) {
+          sheet(
+            `<h2>В комнате прежняя партия</h2><p>Сначала обновите приложение у ведущего и завершите старый стол. Новая коробка использует другие правила.</p><button class="btn primary wide" data-party="${kind === "beacon" ? "beacon-home" : "circuit-home"}">Проверить снова</button>`,
+          );
+          return;
+        }
+        const closed = {
+          ...old,
+          finished: true,
+          closedAt: Date.now(),
+          revision: (old.revision || 0) + 1,
+          ownerDevice: old.ownerDevice || this.deviceId,
+        };
+        this.peer?.publishGame(closed);
+        this.options.onInvite?.(closed);
+      }
       this.tables.delete(kind);
       if (this.frame?.kind === kind) {
         this.frame = null;
@@ -462,6 +510,7 @@ export class PartyGames {
       kind,
       ownerDevice: this.deviceId,
       runLength: launch.length || 8,
+      beaconLength: launch.length || 6,
       round: crypto.randomUUID(),
       players,
       started: 0,
@@ -535,10 +584,6 @@ export class PartyGames {
       s.drawer = players[0].id;
       s.totalTurns = Math.min(players.length, 4);
     }
-    if (kind === "beacon") {
-      s.wheels = Array.from({ length: Math.max(4, players.length) }, () => 0);
-      s.targets = s.wheels.map(() => 1 + Math.floor(Math.random() * 3));
-    }
     if (["meditation", "soundgarden"].includes(kind))
       s.contributors = Object.fromEntries(
         players.map((u) => [
@@ -548,7 +593,8 @@ export class PartyGames {
       );
     if (kind === "meditation") arrangeMeditation(s);
     if (kind === "race") initCircuit(s);
-    if ([...expeditionKinds, "beacon"].includes(kind)) initExpedition(s);
+    if (kind === "beacon") initBeacon(s);
+    if (expeditionKinds.includes(kind)) initExpedition(s);
     this.broadcast();
     this.open();
   }
@@ -573,8 +619,50 @@ export class PartyGames {
     if (!this.store?.authEstablished || this.store.authViewer) return;
     if (this.state) {
       if (this.frame?.controller === this.userId) {
+        if (
+          ["race", "beacon"].includes(this.state.kind) &&
+          this.state.rulesVersion !== 2
+        ) {
+          Object.assign(this.state, {
+            finished: true,
+            closedAt: Date.now(),
+            stage: "lobby",
+            joined: [],
+            readyPlayers: [],
+          });
+          this.broadcast();
+          return;
+        }
         this.broadcast();
         this.privateInstructions();
+      }
+      return;
+    }
+    const owned = [...this.tables.values()].find(
+      (t) =>
+        t.state &&
+        !t.state.finished &&
+        t.frame.ownerDevice === this.deviceId &&
+        t.frame.controller === this.userId,
+    );
+    if (owned) {
+      const current = {
+        state: this.state,
+        frame: this.frame,
+        opened: this.opened,
+      };
+      this.state = owned.state;
+      this.frame = owned.frame;
+      this.opened = false;
+      this.backgroundDispatch = true;
+      try {
+        this.broadcast();
+        this.privateInstructions();
+      } finally {
+        this.state = current.state;
+        this.frame = current.frame;
+        this.opened = current.opened;
+        this.backgroundDispatch = false;
       }
       return;
     }
@@ -593,6 +681,17 @@ export class PartyGames {
       saved.players?.some((u) => u.id === this.userId)
     ) {
       this.state = saved;
+      if (["race", "beacon"].includes(saved.kind) && saved.rulesVersion !== 2) {
+        Object.assign(this.state, {
+          finished: true,
+          closedAt: Date.now(),
+          stage: "lobby",
+          joined: [],
+          readyPlayers: [],
+        });
+        this.broadcast();
+        return;
+      }
       this.broadcast();
       this.privateInstructions();
     }
@@ -635,6 +734,7 @@ export class PartyGames {
           readyPlayers: s.readyPlayers,
           requiresScreen: s.kind === "rift",
           minPlayers: s.kind === "museum" ? 3 : 2,
+          needsUpdate: this.peer?.gameCompatibility?.(2) || [],
           screenCount: this.peer?.onlineDisplays?.() || 0,
         },
         controller: this.userId,
@@ -651,6 +751,21 @@ export class PartyGames {
         createdAt: s.createdAt,
         revision: s.revision,
         public: { ...circuitPublic(s), players: s.players, joined: s.joined },
+        controller: this.userId,
+        controllerClient: this.peer?.peer?.id,
+        finished: !!s.finished,
+        elapsed: s.finished ? s.elapsed : Date.now() - s.started,
+      };
+    if (s.kind === "beacon" && s.rulesVersion === BEACON_RULES)
+      return {
+        kind: s.kind,
+        round: s.round,
+        title: partyTitles.beacon,
+        text: s.module.task,
+        stage: s.stage,
+        createdAt: s.createdAt,
+        revision: s.revision,
+        public: { ...beaconPublic(s), players: s.players, joined: s.joined },
         controller: this.userId,
         controllerClient: this.peer?.peer?.id,
         finished: !!s.finished,
@@ -808,11 +923,20 @@ export class PartyGames {
     };
   }
   broadcast() {
+    if (this.state.finished && !this.state.closedAt)
+      this.state.closedAt = Date.now();
     this.state.revision = (this.state.revision || 0) + 1;
     if (this.state.kind === "race")
       try {
         localStorage.setItem(
           `vmeste:circuit:${this.store.roomId}:${this.userId}`,
+          JSON.stringify(this.state),
+        );
+      } catch {}
+    if (this.state.kind === "beacon")
+      try {
+        localStorage.setItem(
+          `vmeste:beacon:${this.store.roomId}:${this.userId}`,
           JSON.stringify(this.state),
         );
       } catch {}
@@ -846,6 +970,14 @@ export class PartyGames {
   receive(frame) {
     if (!partyKinds.includes(frame.kind)) return;
     const existing = this.tables.get(frame.kind);
+    // Closing a duplicate round must not replace the surviving round's state.
+    if (
+      frame.finished &&
+      existing &&
+      !existing.frame.finished &&
+      existing.frame.round !== frame.round
+    )
+      return;
     if (frame.finished && existing?.state?.round === frame.round) {
       existing.state.finished = true;
       existing.state.closedAt = frame.closedAt || existing.state.closedAt;
@@ -857,6 +989,11 @@ export class PartyGames {
         if (frame.kind === "race")
           localStorage.setItem(
             `vmeste:circuit:${this.store.roomId}:${this.userId}`,
+            JSON.stringify(existing.state),
+          );
+        if (frame.kind === "beacon")
+          localStorage.setItem(
+            `vmeste:beacon:${this.store.roomId}:${this.userId}`,
             JSON.stringify(existing.state),
           );
       } catch {}
@@ -917,6 +1054,7 @@ export class PartyGames {
     if (
       (frame.stage === "lobby" ||
         ["soundgarden", "meditation"].includes(frame.kind)) &&
+      !frame.finished &&
       this.opened &&
       !frame.public.joined?.includes(this.userId)
     )
@@ -957,7 +1095,9 @@ export class PartyGames {
         round: s.round,
         turn: deckKinds.includes(s.kind) ? s.deck.index : s.turn || 0,
       };
-      if (s.kind === "race" && s.rulesVersion === CIRCUIT_VERSION)
+      if (s.kind === "beacon" && s.rulesVersion === BEACON_RULES)
+        Object.assign(payload, beaconSecret(s, u.id));
+      else if (s.kind === "race" && s.rulesVersion === CIRCUIT_VERSION)
         Object.assign(payload, circuitSecret(s, u.id));
       else if ([...expeditionKinds, "race", "beacon"].includes(s.kind))
         Object.assign(payload, expeditionSecret(s, u.id));
@@ -1061,6 +1201,11 @@ export class PartyGames {
           `vmeste:circuit:${this.store.roomId}:${this.userId}`,
           JSON.stringify(state),
         );
+      if (state.kind === "beacon")
+        localStorage.setItem(
+          `vmeste:beacon:${this.store.roomId}:${this.userId}`,
+          JSON.stringify(state),
+        );
       if (this.audioFrame?.round === frame.round) {
         this.audio?.destroy();
         this.audio = null;
@@ -1102,6 +1247,38 @@ export class PartyGames {
     const active =
       table?.frame.public.rulesVersion === CIRCUIT_VERSION ? table.frame : null;
     sheet(circuitHome(this.store, active));
+    document.querySelector("#sheet").scrollTop = 0;
+  }
+  beaconMenu() {
+    if (
+      this.opened &&
+      this.frame &&
+      !["meditation", "soundgarden"].includes(this.frame.kind)
+    )
+      this.input({ action: "leave" });
+    this.opened = false;
+    let table = this.tables.get("beacon");
+    if (!table)
+      try {
+        const saved = JSON.parse(
+          localStorage.getItem(
+            `vmeste:beacon:${this.store.roomId}:${this.userId}`,
+          ),
+        );
+        if (saved?.rulesVersion === BEACON_RULES && !saved.finished) {
+          const previous = this.state;
+          this.state = saved;
+          table = { state: saved, frame: this.publicFrame() };
+          this.state = previous;
+          this.tables.set("beacon", table);
+        }
+      } catch {}
+    sheet(
+      beaconHome(
+        this.store,
+        table?.frame.public.rulesVersion === BEACON_RULES ? table.frame : null,
+      ),
+    );
     document.querySelector("#sheet").scrollTop = 0;
   }
   command(sender, input) {
@@ -1217,6 +1394,35 @@ export class PartyGames {
           : [...s.readyPlayers, sender];
         this.beginIfReady();
         this.broadcast();
+      }
+      return;
+    }
+    if (s.kind === "beacon" && s.rulesVersion === BEACON_RULES) {
+      if (beaconCommand(s, sender, input)) {
+        if (s.finished && !s.recorded) {
+          s.recorded = true;
+          this.store
+            .save("plans", {
+              id: `${this.store.roomId}:record:${s.round}`,
+              title: "Маяк · сохранённая гавань",
+              items: [],
+              arcadeRecord: {
+                kind: "beacon",
+                rulesVersion: BEACON_RULES,
+                players: s.players.map((p) => p.id),
+                seconds: s.elapsed / 1000,
+                createdAt: Date.now(),
+                teamScore: s.teamScore,
+                beaconLength: s.beaconLength,
+                harbor: s.harbor,
+                journal: s.journal,
+              },
+            })
+            .catch(() => toast("Не удалось сохранить вахту"));
+        }
+        this.broadcast();
+        this.privateInstructions();
+        this.render(true);
       }
       return;
     }
@@ -1467,7 +1673,7 @@ export class PartyGames {
       const index = Number(input.index);
       if (
         input.action === "sound-pad" &&
-        [0, 1].includes(Number(input.bank)) &&
+        [0, 1, 2, 3].includes(Number(input.bank)) &&
         Number.isFinite(input.x) &&
         Number.isFinite(input.y)
       ) {
@@ -1487,8 +1693,14 @@ export class PartyGames {
         input.action === "star" &&
         Number.isInteger(index) &&
         index >= 0 &&
-        index < 4
+        index < 12
       ) {
+        if (
+          !assignedConstellations(s.players, sender, s.solo).some(
+            (star) => star.index === index,
+          )
+        )
+          return;
         c.stars = (c.stars || []).filter(
           (st) => st.index !== index && st.until > Date.now(),
         );
@@ -1503,7 +1715,7 @@ export class PartyGames {
         c.memory ||= [0, 0, 0, 0];
         c.memory[index] = Math.min(
           1,
-          c.memory[index] * 0.99 + clamp(input.power) * 0.12,
+          (c.memory[index] || 0) * 0.99 + clamp(input.power) * 0.12,
         );
         c.memoryAt = Date.now();
       }
@@ -1644,7 +1856,7 @@ export class PartyGames {
     }
     s.finished = true;
     s.elapsed = Date.now() - s.started;
-    if (s.kind === "race" && s.rulesVersion === CIRCUIT_VERSION) {
+    if (["race", "beacon"].includes(s.kind) && s.rulesVersion === 2) {
       this.broadcast();
       return;
     }
@@ -1744,7 +1956,11 @@ export class PartyGames {
     const stage = document.querySelector("#party-live");
     if (stage)
       stage.innerHTML =
-        `<div class="game-presence" aria-label="Участники игры">${f.public.players?.map((u) => `<span>${esc(u.avatar)} ${esc(u.name)} · ${f.public.joined?.includes(u.id) ? "за столом" : "приглашён"}</span>`).join("") || ""}</div>` +
+        (f.finished ||
+        f.stage === "lobby" ||
+        (f.kind === "beacon" && f.public.rulesVersion === BEACON_RULES)
+          ? ""
+          : `<div class="game-presence" aria-label="Участники игры">${f.public.players?.map((u) => `<span>${esc(u.avatar)} ${esc(u.name)} · ${f.public.joined?.includes(u.id) ? "за столом" : "приглашён"}</span>`).join("") || ""}</div>`) +
         partyScreen(f);
     this.updateLobby();
     if (["draw", "museum"].includes(f.kind)) this.paint();
@@ -1768,6 +1984,7 @@ export class PartyGames {
           point.dataset.y = p[1];
         }
       }
+      updateSoundConnections();
       for (const b of document.querySelectorAll('[data-party="layer"]'))
         b.setAttribute(
           "aria-pressed",
@@ -1776,7 +1993,7 @@ export class PartyGames {
     }
     if (["soundgarden", "meditation"].includes(f.kind)) {
       const voice =
-          f.public.solo && this.voice
+          (f.public.solo || f.kind === "meditation") && this.voice
             ? this.userId + ":voice" + this.voice
             : this.userId,
         mine = f.public.contributors?.[voice];
@@ -1797,10 +2014,15 @@ export class PartyGames {
     const member = p.players.some((u) => u.id === this.userId),
       secret = this.secrets.get(f.round + ":" + (p.turn || 0)) || {};
     let html = "";
-    if (f.stage === "lobby") {
+    if (f.stage === "lobby" && f.finished)
+      html =
+        '<button class="btn soft wide" data-action="close">Закрыть окно</button>';
+    else if (f.stage === "lobby") {
       html = `<button class="btn primary wide" data-party="ready">${p.readyPlayers?.includes(this.userId) ? "Отменить готовность" : "Готов"}</button><p class="muted center">${p.joined?.length || 1} за столом · начало после готовности всех</p>${this.hosting && ["soundgarden", "meditation"].includes(f.kind) ? '<button class="btn lavender wide" data-party="solo">Слушать одному · все пульты</button>' : ""}${this.hosting ? `<button class="btn soft wide" data-party="invite" ${f.invitedAt ? "disabled" : ""}>${f.invitedAt ? "Приглашение активно" : "Отправить приглашение"}</button><p class="fine center">Приглашение останется в играх до закрытия лобби и не прервёт другую игру.</p><button class="btn text wide" data-party="cancel-lobby">Закрыть лобби</button>` : ""}`;
     } else if (f.kind === "race" && p.rulesVersion === CIRCUIT_VERSION)
       html = circuitControls(f, this.userId, secret);
+    else if (f.kind === "beacon" && p.rulesVersion === BEACON_RULES)
+      html = beaconControls(f, this.userId, secret);
     else if ([...expeditionKinds, "race", "beacon"].includes(f.kind))
       html = expeditionControls(f, this.userId, secret);
     else if (deckKinds.includes(f.kind))
@@ -1979,8 +2201,10 @@ export class PartyGames {
     )
       return false;
     if (s.kind === "rift" && !(this.peer?.onlineDisplays?.() > 0)) return false;
+    if (this.peer?.gameCompatibility?.(2).length) return false;
     if (s.kind === "race") initCircuit(s);
-    if ([...expeditionKinds, "beacon"].includes(s.kind)) initExpedition(s);
+    if (s.kind === "beacon") initBeacon(s);
+    if (expeditionKinds.includes(s.kind)) initExpedition(s);
     if (s.kind === "museum") s.totalRounds = Math.max(4, s.players.length);
     if (s.kind === "draw") s.totalTurns = Math.max(4, s.players.length);
     if (s.kind === "poem")
@@ -2074,7 +2298,7 @@ export class PartyGames {
         records
           .map(
             (r) =>
-              `<article class="record-history-card"><div><span class="eyebrow">${new Date(r.createdAt).toLocaleDateString("ru-RU")} · ${r.arcadeRecord.players.length} участников</span><h3>${esc(r.title)}</h3><p>${r.arcadeRecord.rulesVersion === CIRCUIT_VERSION && r.arcadeRecord.kind === "race" ? `${Math.round(r.arcadeRecord.teamScore / r.arcadeRecord.runLength)}% общего света · ${r.arcadeRecord.runLength} испытаний` : ["museum", "frequency", ...expeditionKinds, "race", "beacon"].includes(r.arcadeRecord.kind) ? `${r.arcadeRecord.results?.[this.userId] || 0} ${r.arcadeRecord.kind === "frequency" ? "/100" : "очков"}` : `${(r.arcadeRecord.times?.[this.userId] / 1000 || r.arcadeRecord.seconds).toFixed(1)} с`}</p></div>${
+              `<article class="record-history-card"><div><span class="eyebrow">${new Date(r.createdAt).toLocaleDateString("ru-RU")} · ${r.arcadeRecord.players.length} участников</span><h3>${esc(r.title)}</h3><p>${r.arcadeRecord.rulesVersion === BEACON_RULES && r.arcadeRecord.kind === "beacon" ? `${r.arcadeRecord.harbor.ships.length} судов дома · ${r.arcadeRecord.beaconLength} узлов` : r.arcadeRecord.rulesVersion === CIRCUIT_VERSION && r.arcadeRecord.kind === "race" ? `${Math.round(r.arcadeRecord.teamScore / r.arcadeRecord.runLength)}% общего света · ${r.arcadeRecord.runLength} испытаний` : ["museum", "frequency", ...expeditionKinds, "race", "beacon"].includes(r.arcadeRecord.kind) ? `${r.arcadeRecord.results?.[this.userId] || 0} ${r.arcadeRecord.kind === "frequency" ? "/100" : "очков"}` : `${(r.arcadeRecord.times?.[this.userId] / 1000 || r.arcadeRecord.seconds).toFixed(1)} с`}</p></div>${
                 r.arcadeRecord.gallery
                   ? `<div class="record-thumbs">${r.arcadeRecord.gallery
                       .slice(0, 3)
@@ -2082,7 +2306,13 @@ export class PartyGames {
                       .join(
                         "",
                       )}</div><button class="btn text" data-party="view-record" data-id="${esc(r.id)}">Открыть выставку</button><button class="btn soft wide" data-party="screen-record" data-id="${esc(r.id)}">Показать на общем экране</button>`
-                  : ""
+                  : r.arcadeRecord.kind === "beacon" &&
+                      r.arcadeRecord.rulesVersion === BEACON_RULES
+                    ? `<button class="btn soft wide" data-party="beacon-record" data-id="${esc(r.id)}">Открыть гавань ${icon("arrow")}</button>`
+                    : r.arcadeRecord.kind === "race" &&
+                        r.arcadeRecord.rulesVersion === CIRCUIT_VERSION
+                      ? `<button class="btn soft wide" data-party="view-team-record" data-id="${esc(r.id)}">Посмотреть путь ${icon("arrow")}</button>`
+                      : ""
               }<button class="btn text" data-party="delete-record" data-id="${esc(r.id)}">${icon("trash")} Удалить результат</button></article>`,
           )
           .join("") ||
@@ -2097,15 +2327,19 @@ export class PartyGames {
     );
     if (!r) return;
     const data = r.arcadeRecord;
-    this.frame = {
-      kind: "museum",
-      round: id.split(":record:")[1],
+    const frame = {
+      kind: "exhibitworld",
+      stage: "persistent",
+      round: `${this.store.roomId}:exhibit:${id}`,
+      revision: Date.now(),
+      createdAt: 0,
       title: partyTitles.museum,
       text: "Из вашей игровой памяти. Эти истории могли придумать только вы.",
       progress: "Выставка сохранена",
       finished: true,
       elapsed: data.seconds * 1000,
       public: {
+        recordKind: "museum",
         players: data.players.map((id) => ({
           id,
           name:
@@ -2118,13 +2352,65 @@ export class PartyGames {
         gallery: data.gallery,
       },
     };
-    if (screen) this.peer?.publishGame(this.frame);
-    this.open();
+    if (screen) this.peer?.publishGame(frame);
+    this.opened = false;
+    sheet(partyScreen(frame));
   }
   async action(action, el) {
     try {
       if (action === "circuit-home") {
         this.circuitMenu();
+        return;
+      }
+      if (action === "beacon-home") {
+        this.beaconMenu();
+        return;
+      }
+      if (action === "beacon-start") {
+        this.start("beacon", {
+          beacon: true,
+          length: Number(el.dataset.length),
+        });
+        return;
+      }
+      if (action === "beacon-resume") {
+        this.openTable("beacon");
+        return;
+      }
+      if (action === "beacon-record") {
+        const record = this.store.data.plans.find(
+          (r) =>
+            r.id === el.dataset.id &&
+            !r.deletedAt &&
+            r.arcadeRecord?.kind === "beacon" &&
+            r.arcadeRecord.rulesVersion === BEACON_RULES,
+        );
+        if (record) {
+          this.opened = false;
+          sheet(beaconRecordView(record, this.store));
+        }
+        return;
+      }
+      if (action === "beacon-action") {
+        const input = {
+          action: el.dataset.beaconAction,
+          index: Number(el.dataset.index),
+          value: Number(el.dataset.value),
+          turn: this.frame.public.turn,
+        };
+        if (
+          input.action === "beacon-launch" &&
+          this.frame.public.module.id === "pendulum"
+        ) {
+          const secret = this.secrets.get(
+            this.frame.round + ":" + this.frame.public.turn,
+          )?.machine;
+          if (!secret) return;
+          let measure = ((Date.now() - secret.clockStart) / secret.period) % 1;
+          if (secret.direction) measure = 1 - measure;
+          input.measure = measure;
+        }
+        this.input(input);
         return;
       }
       if (action === "circuit-start") {

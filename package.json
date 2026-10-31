@@ -1,22 +1,25 @@
 {
   "name": "vmeste",
-  "version": "4.2.0",
+  "version": "4.3.0",
   "private": true,
   "type": "module",
   "scripts": {
     "start": "node scripts/serve.mjs",
-    "test": "node tests/core.test.mjs && node tests/auth.test.mjs && node tests/games4.test.mjs && node tests/worlds.test.mjs && node tests/turns.test.mjs && node tests/circuit.test.mjs && node tests/session-protocol.test.mjs",
+    "test": "node tests/core.test.mjs && node tests/auth.test.mjs && node tests/games4.test.mjs && node tests/worlds.test.mjs && node tests/turns.test.mjs && node tests/circuit.test.mjs && node tests/session-protocol.test.mjs && node tests/beacon.test.mjs && node tests/composition.test.mjs",
     "test:browser": "node tests/browser.mjs",
     "test:rooms": "node tests/rooms-live.mjs",
     "test:party": "node tests/revision4.mjs",
     "test:pwa": "node tests/pwa-update.mjs",
     "test:museum": "node tests/museum-live.mjs",
     "test:sound": "node tests/sound.mjs",
+    "test:music": "node tests/music-live.mjs",
     "test:frequency": "node tests/frequency-live.mjs",
     "test:worlds": "node tests/worlds-live.mjs",
     "test:turns": "node tests/turns-live.mjs",
     "test:circuit": "node tests/circuit-live.mjs",
-    "test:sessions": "node tests/sessions-live.mjs"
+    "test:sessions": "node tests/sessions-live.mjs",
+    "test:beacon": "node tests/beacon-live.mjs",
+    "test:compat": "node tests/compatibility-live.mjs"
   },
   "devDependencies": {
     "fake-indexeddb": "6.2.4",

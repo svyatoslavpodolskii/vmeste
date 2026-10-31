@@ -161,7 +161,7 @@ function updateUnread() {
 window.addEventListener("vmeste-unread", updateUnread);
 function screenTabs() {
   return `<div class="screen-tabs">${[...(peer?.games?.values() || [])]
-    .filter((f) => !f.finished)
+    .filter((f) => !f.finished || f.kind === "exhibitworld")
     .map(
       (f) =>
         `<button class="btn ${state.screenFrame?.kind === f.kind ? "lavender" : "soft"}" data-action="screen-game" data-id="${esc(f.kind)}">${esc(f.title)}</button>`,
@@ -1797,7 +1797,17 @@ window.vmesteBeforeUpdate = async () => {
 
 window.addEventListener("vmeste-game-view", (e) => {
   const incoming = e.detail;
-  if (state.screenKind)
+  if (incoming.kind === "exhibitworld") {
+    state.screenKind = "exhibitworld";
+    state.screenFrame = incoming;
+  } else if (
+    state.screenKind === "exhibitworld" &&
+    ["lobby", "running"].includes(incoming.stage) &&
+    !incoming.finished
+  ) {
+    state.screenKind = incoming.kind;
+    state.screenFrame = incoming;
+  } else if (state.screenKind)
     state.screenFrame = peer?.games?.get(state.screenKind) || incoming;
   else if (
     !["soundgarden", "meditation"].includes(incoming.kind) ||

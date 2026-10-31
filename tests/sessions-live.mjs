@@ -86,6 +86,7 @@ try {
   );
   assert.equal(await a.locator(".live-game-banner").count(), 1);
   await open(b, "beacon");
+  await b.locator('[data-party="beacon-start"][data-length="3"]').click();
   await b.locator('[data-party="invite"]').click();
   await close(b);
   await a.waitForFunction(
@@ -135,14 +136,12 @@ try {
   assert.equal(await a.locator(".categories").count(), 0);
   assert.equal(await a.locator("[data-catalogue-filter]").count(), 3);
   assert.ok(!(await a.locator("main").textContent()).includes("undefined"));
-  const geometry = await a
-    .locator(".catalogue-paged")
-    .evaluate((e) => ({
-      height: e.clientHeight,
-      width: e.clientWidth,
-      scroll: e.scrollWidth,
-      rows: new Set([...e.children].map((c) => c.offsetTop)).size,
-    }));
+  const geometry = await a.locator(".catalogue-paged").evaluate((e) => ({
+    height: e.clientHeight,
+    width: e.clientWidth,
+    scroll: e.scrollWidth,
+    rows: new Set([...e.children].map((c) => c.offsetTop)).size,
+  }));
   assert.equal(geometry.rows, 3);
   assert.ok(geometry.height < 600);
   assert.ok(geometry.scroll > geometry.width * 5);

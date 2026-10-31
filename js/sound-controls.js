@@ -1,4 +1,5 @@
 import { esc, icon } from "./ui.js";
+import { assignedConstellations } from "./composition.js";
 const clamp = (n) => Math.max(0, Math.min(1, n));
 export const quad = (x, y) => [
   (1 - x) * (1 - y),
@@ -73,9 +74,47 @@ function meditationPlane(f, user) {
 export function soundRole(f, user) {
   return (f.public.players.findIndex((u) => u.id === user) + 4) % 4;
 }
+function starDrawing(index) {
+  const points = Array.from({ length: 4 + (index % 3) }, (_, i) => {
+    const angle = i * 2.399 + index * 0.47;
+    const radius = 18 + ((i * 13 + index * 7) % 22);
+    return [50 + Math.cos(angle) * radius, 45 + Math.sin(angle) * radius];
+  });
+  return `<svg viewBox="0 0 100 90" aria-hidden="true"><path d="M${points.map((p) => p.join(" ")).join(" L")}"/>${points.map(([x, y], i) => `<circle cx="${x}" cy="${y}" r="${i === 0 ? 4 : 2.5}"/>`).join("")}</svg>`;
+}
+
+export function updateSoundConnections() {
+  const plane = document.querySelector(".meditation-plane");
+  if (!plane) return;
+  let svg = plane.querySelector(".voice-connections");
+  if (!svg) {
+    svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 100 100");
+    svg.setAttribute("preserveAspectRatio", "none");
+    svg.setAttribute("aria-hidden", "true");
+    svg.classList.add("voice-connections");
+    plane.prepend(svg);
+  }
+  const points = [...plane.querySelectorAll(".meditation-point")];
+  svg.innerHTML = points
+    .flatMap((a, i) =>
+      points.slice(i + 1).map((b) => {
+        const ax = Number(a.dataset.x),
+          ay = Number(a.dataset.y),
+          bx = Number(b.dataset.x),
+          by = Number(b.dataset.y);
+        const affinity = Math.max(
+          0.08,
+          0.5 - Math.hypot(ax - bx, ay - by) * 0.4,
+        );
+        return `<line x1="${10 + ax * 80}" y1="${10 + ay * 80}" x2="${10 + bx * 80}" y2="${10 + by * 80}" opacity="${affinity}"/>`;
+      }),
+    )
+    .join("");
+}
 function pad(bank, title, corners, point, theme) {
   const [x, y] = point || [0.5, 0.5];
-  return `<section class="mix-panel panel-${theme}"><header><span class="eyebrow">${bank ? "02 / ГАРМОНИКИ" : "01 / СРЕДА"}</span><h3>${title}</h3></header><div class="xy-pad" data-sound-pad="${bank}" role="slider" tabindex="0" aria-label="${title}: смешивание четырёх настроений" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(x * 100)}" aria-valuetext="Горизонталь ${Math.round(x * 100)}, вертикаль ${Math.round(y * 100)}" data-x="${x}" data-y="${y}"><div class="pad-grid" aria-hidden="true"><i></i><i></i><i></i><i></i></div>${corners.map((c, i) => `<span class="corner corner-${i}">${c}</span>`).join("")}<span class="pad-orbit orbit-a"></span><span class="pad-orbit orbit-b"></span><span class="mix-cursor" style="transform:translate(${x * 100}%,${y * 100}%)"><i></i></span><span class="pad-hint">Двигайте свет внутри</span></div></section>`;
+  return `<section class="mix-panel mix-bank-${bank} panel-${theme}"><header><span class="eyebrow">${["01 / СРЕДА", "02 / ГАРМОНИЯ", "03 / МЕЛОДИЯ", "04 / ДВИЖЕНИЕ"][bank]}</span><h3>${title}</h3></header><div class="xy-pad" data-sound-pad="${bank}" role="slider" tabindex="0" aria-label="${title}: смешивание четырёх настроений" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(x * 100)}" aria-valuetext="Горизонталь ${Math.round(x * 100)}, вертикаль ${Math.round(y * 100)}" data-x="${x}" data-y="${y}"><div class="pad-grid" aria-hidden="true"><i></i><i></i><i></i><i></i></div>${corners.map((c, i) => `<span class="corner corner-${i}">${c}</span>`).join("")}<span class="pad-orbit orbit-a"></span><span class="pad-orbit orbit-b"></span><span class="mix-cursor" style="transform:translate(${x * 100}%,${y * 100}%)"><i></i></span><span class="pad-hint">Двигайте свет внутри</span></div></section>`;
 }
 export function soundControls(f, user, audio, voice = 0) {
   const mine =
@@ -86,17 +125,97 @@ export function soundControls(f, user, audio, voice = 0) {
       ] || {},
     role = f.public.solo ? voice : soundRole(f, user),
     r = roles[role];
-  return `<div class="instrument instrument-${r[2]}">${f.public.solo && f.kind !== "meditation" ? `<div class="voice-tabs" aria-label="Четыре одиночных пульта">${roles.map((r, i) => `<button data-party="voice" data-index="${i}" aria-pressed="${i === voice}">${r[0]}</button>`).join("")}</div>` : ``}<header class="instrument-title"><span class="instrument-sigil">${["◒", "⌁", "◉", "✧"][role]}</span><div><span class="eyebrow">ВАШ ПУЛЬТ / ${role + 1}</span><h3>${f.kind === "meditation" ? "Общее небо" : r[0]}</h3><p>${f.kind === "meditation" ? "Ваши голоса на одной плоскости" : r[1]}</p></div></header><button class="btn primary wide" data-party="sound">${icon(audio?.started ? "pause" : "play")} ${audio?.started ? "Пауза" : "Включить звук здесь"}</button>${f.kind === "soundgarden" ? pad(0, "Живой ландшафт", role % 2 ? ["Листва", "Дождь", "Ночь", "Ветер"] : ["Берег", "Роса", "Ветер", "Лес"], mine.pads?.[0], r[2]) + pad(1, "Гармонический сад", role % 2 ? ["Хрусталь", "Туман", "Космос", "Тепло"] : ["Свет", "Земля", "Воздух", "Янтарь"], mine.pads?.[1] || [0.45, 0.65], r[2]) : meditationPlane(f, user) + `<section class="constellation-field"><span class="eyebrow">ЗАЖГИТЕ СОЗВЕЗДИЕ</span><p>Удерживайте: ярче свет, сильнее отклик, дольше послезвучие.</p><div class="constellations">${["Комета", "Туманность", "Пульсар", "Аврора"].map((n, i) => `<button data-constellation="${i}" class="constellation constellation-${(i + role) % 4}" aria-label="Удерживать: ${n}"><svg viewBox="0 0 100 90" aria-hidden="true"><path d="${["M15 60 40 20 60 66 88 30", "M10 30 40 65 58 16 90 55", "M20 15 80 30 40 70 20 15 85 75", "M10 66 30 20 70 15 90 55 50 78 30 20"][(i + role) % 4]}"/><circle cx="40" cy="20" r="3"/><circle cx="60" cy="66" r="4"/><circle cx="88" cy="30" r="3"/></svg><span>${n}</span><i></i></button>`).join("")}</div></section>`}<div class="sound-volume"><label>Громкость здесь<input type="range" data-sound-volume min="0" max="1" step=".01" value="${audio?.level ?? 0.55}"></label><p>Ваши пульты различаются. Каждый меняет свою часть общего звучания.</p></div></div>`;
+  return `<div class="instrument instrument-${r[2]}">${f.public.solo && f.kind !== "meditation" ? `<div class="voice-tabs" aria-label="Четыре одиночных пульта">${roles.map((r, i) => `<button data-party="voice" data-index="${i}" aria-pressed="${i === voice}">${r[0]}</button>`).join("")}</div>` : ``}<header class="instrument-title"><span class="instrument-sigil">${["◒", "⌁", "◉", "✧"][role]}</span><div><span class="eyebrow">ВАШ ПУЛЬТ / ${role + 1}</span><h3>${f.kind === "meditation" ? "Общее небо" : r[0]}</h3><p>${f.kind === "meditation" ? "Ваши голоса на одной плоскости" : r[1]}</p></div></header><button class="btn primary wide" data-party="sound">${icon(audio?.started ? "pause" : "play")} ${audio?.started ? "Пауза" : "Включить звук здесь"}</button>${
+    f.kind === "soundgarden"
+      ? pad(
+          0,
+          "Живой ландшафт",
+          role % 2
+            ? ["Листва", "Дождь", "Ночь", "Ветер"]
+            : ["Берег", "Роса", "Ветер", "Лес"],
+          mine.pads?.[0],
+          r[2],
+        ) +
+        pad(
+          1,
+          "Гармонический сад",
+          role % 2
+            ? ["Хрусталь", "Туман", "Космос", "Тепло"]
+            : ["Свет", "Земля", "Воздух", "Янтарь"],
+          mine.pads?.[1] || [0.45, 0.65],
+          r[2],
+        ) +
+        pad(
+          2,
+          "Мелодические тропы",
+          ["Редкие ноты", "Переливы", "Низкий свет", "Высокие огни"],
+          mine.pads?.[2],
+          r[2],
+        ) +
+        pad(
+          3,
+          "Дыхание сада",
+          ["Покой", "Пульсация", "Близко", "Далеко"],
+          mine.pads?.[3],
+          r[2],
+        )
+      : meditationPlane(f, user) +
+        `<section class="constellation-field"><span class="eyebrow">ЗАЖГИТЕ СОЗВЕЗДИЕ</span><p>Удерживайте: ярче свет, сильнее отклик, дольше послезвучие.</p><div class="constellations">${assignedConstellations(
+          f.public.players,
+          user,
+          f.public.solo,
+        )
+          .map(
+            ({ name: n, hint, index: i }) =>
+              `<button data-constellation="${i}" class="constellation constellation-${(i + role) % 4}" aria-label="Удерживать: ${n}">${starDrawing(i)}<span>${n}</span><small>${hint}</small><i></i></button>`,
+          )
+          .join("")}</div></section>`
+  }<div class="sound-volume"><label>Громкость здесь<input type="range" data-sound-volume min="0" max="1" step=".01" value="${audio?.level ?? 0.55}"></label><p>Ваши пульты различаются. Каждый меняет свою часть общего звучания.</p></div></div>`;
 }
 export function soundWorld(f) {
-  const cs = Object.values(f.public.contributors || {}),
-    a = cs[0]?.pads?.[0] || [0.5, 0.5],
-    b = cs[1]?.pads?.[0] || [0.5, 0.5];
-  return `<div class="audio-visual world-${f.kind}" aria-hidden="true"><div class="sound-orbit" style="transform:translate(${(a[0] - 0.5) * 35}px,${(a[1] - 0.5) * 30}px) scale(${0.8 + a[0] * 0.4})"></div><div class="sound-orbit second" style="transform:translate(${(b[0] - 0.5) * -35}px,${(b[1] - 0.5) * 30}px) scale(${0.8 + b[1] * 0.4})"></div><span class="sound-seed">${f.kind === "meditation" ? "СЛУШАТЬ МЕЖДУ ЗВЁЗДАМИ" : "САД, КОТОРЫЙ РАСТЁТ ИЗ ВАС"}</span><div class="world-particles">${Array.from({ length: 12 }, (_, i) => `<i style="--n:${i}"></i>`).join("")}</div></div><div class="contribution-strip">${f.public.players.map((u, i) => `<span><i class="contribution-${i % 4}"></i>${esc(u.name)} · ${roles[i % 4][0]}</span>`).join("")}</div>`;
+  const entries = Object.entries(f.public.contributors || {});
+  const points = entries.map(([id, c], i) => ({
+    id,
+    x: 10 + (c.pads?.[0]?.[0] ?? 0.5) * 80,
+    y: 18 + (c.pads?.[0]?.[1] ?? 0.5) * 60,
+    i,
+    c,
+  }));
+  const colors = ["#a8d9ce", "#d5c39b", "#cbb4e8", "#e7b7c2"];
+  const lines = points
+    .flatMap((a, i) =>
+      points
+        .slice(i + 1)
+        .map(
+          (b) =>
+            `<line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="${colors[a.i % 4]}" stroke-width=".18" opacity=".25"/>`,
+        ),
+    )
+    .join("");
+  return `<div class="audio-visual world-${f.kind}"><svg class="shared-sound-scene" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet" aria-hidden="true">${lines}${points.map((p) => `<g class="scene-voice" style="--voice-color:${colors[p.i % 4]};--delay:${p.i * 0.7}s"><circle class="voice-aura" cx="${p.x}" cy="${p.y}" r="${6 + (p.c.pads?.[1]?.[1] ?? 0.5) * 9}" fill="${colors[p.i % 4]}" opacity=".08"/><circle cx="${p.x}" cy="${p.y}" r="1.4" fill="${colors[p.i % 4]}"/><circle cx="${p.x}" cy="${p.y}" r="3" fill="none" stroke="${colors[p.i % 4]}" stroke-width=".15"/></g>`).join("")}</svg><span class="sound-seed">${f.kind === "meditation" ? "СЛУШАТЬ МЕЖДУ ЗВЁЗДАМИ" : "САД, КОТОРЫЙ РАСТЁТ ИЗ ВАС"}</span><div class="scene-constellations">${assignedConstellations(
+    [{ id: "all" }],
+    "all",
+    true,
+  )
+    .map((star) => {
+      const active = entries.some(([, c]) =>
+        (c.stars || []).some(
+          (s) => s.index === star.index && s.until > Date.now(),
+        ),
+      );
+      const remembered = entries.some(
+        ([, c]) => (c.memory?.[star.index] || 0) > 0.01,
+      );
+      return `<span class="scene-star ${active ? "lit" : remembered ? "remembered" : ""}" style="--star:${star.index}">${starDrawing(star.index)}<small>${star.name}</small></span>`;
+    })
+    .join(
+      "",
+    )}</div></div><div class="contribution-strip">${f.public.players.map((u, i) => `<span><i class="contribution-${i % 4}"></i>${esc(u.name)} · ${roles[i % 4][0]}</span>`).join("")}</div>`;
 }
 export function bindSoundControls(party) {
   for (const stop of party.soundCleanup || []) stop();
   party.soundCleanup = [];
+  updateSoundConnections();
   for (const point of document.querySelectorAll(
     "[data-meditation-point]:not([disabled])",
   )) {
@@ -114,6 +233,7 @@ export function bindSoundControls(party) {
       point.dataset.y = y;
       point.style.left = `${10 + x * 80}%`;
       point.style.top = `${10 + y * 80}%`;
+      updateSoundConnections();
       if (send)
         party.input({
           action: "sound-pad",

@@ -2,6 +2,65 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { acceptGameFrame } from "../js/game-protocol.js";
 import { RoomPeer } from "../js/peer.js";
+test("closed rounds survive a newer round of the same game and persisted history", () => {
+  const games = new Map();
+  const first = {
+    kind: "meditation",
+    round: "first",
+    stage: "running",
+    createdAt: 1,
+    revision: 1,
+    ownerDevice: "A",
+  };
+  acceptGameFrame(games, first, 10);
+  acceptGameFrame(
+    games,
+    { ...first, finished: true, closedAt: 20, revision: 2 },
+    20,
+  );
+  const next = { ...first, round: "next", createdAt: 30 };
+  acceptGameFrame(games, next, 30);
+  const restored = new Map(games);
+  restored.closedRounds = new Map(
+    JSON.parse(JSON.stringify([...games.closedRounds])),
+  );
+  assert.equal(
+    acceptGameFrame(restored, { ...first, revision: 999 }, 40).chosen.round,
+    "next",
+  );
+  assert.equal(
+    acceptGameFrame(
+      restored,
+      { ...first, finished: true, closedAt: 20, revision: 1000 },
+      41,
+    ).chosen.round,
+    "next",
+  );
+  assert.equal(restored.get("meditation").finished, undefined);
+});
+test("a guest replays only authored frames, while the hub may relay foreign games", () => {
+  const own = { round: "own", controller: "A", controllerClient: "a-client" };
+  const foreign = {
+    round: "foreign",
+    controller: "B",
+    controllerClient: "b-client",
+  };
+  const peer = {
+    peer: { id: "a-client" },
+    store: { userId: "A" },
+    games: new Map([
+      ["a", own],
+      ["b", foreign],
+    ]),
+    isHub: false,
+  };
+  assert.deepEqual(RoomPeer.prototype.framesForConnection.call(peer), [own]);
+  peer.isHub = true;
+  assert.deepEqual(RoomPeer.prototype.framesForConnection.call(peer), [
+    own,
+    foreign,
+  ]);
+});
 test("hub retains moves while the controller reconnects and routes each once to the new client", () => {
   const sent = [];
   const game = { round: "rejoin", controllerClient: "old-client" };
