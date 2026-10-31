@@ -8,6 +8,8 @@ export const esc = (v) =>
       ],
   );
 const paths = {
+  music:
+    "M9 18V5l12-2v13M9 8l12-2M9 18a3 3 0 1 1-3-3 3 3 0 0 1 3 3Zm12-2a3 3 0 1 1-3-3 3 3 0 0 1 3 3Z",
   expand: "M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5",
   letter: "M3 5h18v14H3V5Zm0 0 9 8 9-8",
   bell: "M4 17h16l-2-4V8a6 6 0 0 0-12 0v5l-2 4Zm6 4h4",

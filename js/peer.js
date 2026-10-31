@@ -1,6 +1,6 @@
 ﻿import { Sync } from "./sync.js";
 import { keyId } from "./auth.js";
-import { chooseGame } from "./game-protocol.js";
+import { acceptGameFrame } from "./game-protocol.js";
 export class RoomPeer {
   constructor(store, onStatus, auth) {
     this.store = store;
@@ -8,6 +8,8 @@ export class RoomPeer {
     this.auth = auth;
     this.sessions = new Map();
     this.games = new Map();
+    this.pendingInputs = [];
+    this.pendingCommands = [];
     this.stopped = false;
     this.change = (e) => {
       if (e.detail.local)
@@ -218,6 +220,9 @@ export class RoomPeer {
         if (this.isHub) this.shareRoster();
         for (const frame of this.games.values())
           c.send({ type: "game-view", frame });
+        this.flushInputs();
+        this.flushCommands();
+        window.dispatchEvent(new CustomEvent("vmeste-game-connected"));
       });
     });
     c.on("data", async (m) => {
@@ -293,12 +298,25 @@ export class RoomPeer {
             session.admission.remote.memberId;
           m.frame.controllerClient = c.peer;
         }
-        const chosen = chooseGame(this.games.get(m.frame.kind), m.frame);
+        const { chosen, retired } = acceptGameFrame(this.games, m.frame);
+        for (const closed of retired) {
+          window.dispatchEvent(
+            new CustomEvent("vmeste-game-view", { detail: closed }),
+          );
+          if (this.isHub)
+            for (const other of this.sessions.values())
+              if (other.admission?.authorized && other.c.open)
+                other.c.send({ type: "game-view", frame: closed });
+        }
         if (chosen !== m.frame) {
           c.send({ type: "game-view", frame: chosen });
+          window.dispatchEvent(
+            new CustomEvent("vmeste-game-view", { detail: chosen }),
+          );
           return;
         }
         this.games.set(m.frame.kind, m.frame);
+        this.flushCommands();
         this.lastGame = m.frame;
         window.dispatchEvent(
           new CustomEvent("vmeste-game-view", { detail: m.frame }),
@@ -370,7 +388,15 @@ export class RoomPeer {
       controller: this.store.userId,
       controllerClient: this.peer?.id,
     };
-    const chosen = chooseGame(this.games.get(frame.kind), frame);
+    const { chosen, retired } = acceptGameFrame(this.games, frame);
+    for (const closed of retired) {
+      window.dispatchEvent(
+        new CustomEvent("vmeste-game-view", { detail: closed }),
+      );
+      for (const session of this.sessions.values())
+        if (session.admission?.authorized && session.c.open)
+          session.c.send({ type: "game-view", frame: closed });
+    }
     if (chosen !== frame) {
       window.dispatchEvent(
         new CustomEvent("vmeste-game-view", { detail: chosen }),
@@ -378,6 +404,7 @@ export class RoomPeer {
       return;
     }
     this.games.set(frame.kind, frame);
+    this.flushCommands();
     this.lastGame = frame;
     for (const s of this.sessions.values())
       if (s.admission?.authorized && s.c.open)
@@ -386,18 +413,34 @@ export class RoomPeer {
   sendInput(input) {
     if (!input || JSON.stringify(input).length > 14000 || this.store.authViewer)
       return;
-    if (this.isHub) this.routeInput(this.store.userId, input);
-    else
-      for (const s of this.players()) s.c.send({ type: "play-input", input });
-  }
-  routeInput(sender, input) {
-    if (
-      !input ||
-      JSON.stringify(input).length > 14000 ||
-      ![...this.games.values()].some((f) => f.round === input.round)
-    )
+    const own = [...this.games.values()].find(
+      (f) => f.round === input.round && f.controllerClient === this.peer?.id,
+    );
+    if (own) {
+      window.dispatchEvent(
+        new CustomEvent("vmeste-game-input", {
+          detail: { sender: this.store.userId, input },
+        }),
+      );
       return;
+    }
+    if (this.isHub) this.routeInput(this.store.userId, input);
+    else {
+      const sessions = this.players().filter((s) => s.c.open);
+      if (!sessions.length) {
+        this.pendingInputs.push(input);
+        this.pendingInputs = this.pendingInputs.slice(-100);
+      } else for (const s of sessions) s.c.send({ type: "play-input", input });
+    }
+  }
+  flushInputs() {
+    const pending = this.pendingInputs.splice(0);
+    for (const input of pending) this.sendInput(input);
+  }
+  routeInput(sender, input, queuedAt = Date.now()) {
+    if (!input || JSON.stringify(input).length > 14000) return;
     const game = [...this.games.values()].find((f) => f.round === input.round);
+    if (game?.finished) return;
     const msg = { type: "play-command", sender, input };
     if (game?.controllerClient === this.peer?.id)
       window.dispatchEvent(
@@ -405,9 +448,23 @@ export class RoomPeer {
       );
     else {
       const target = this.sessions.get(game?.controllerClient);
-      if (target?.admission?.authorized && !target.admission.remoteViewer)
+      if (
+        target?.admission?.authorized &&
+        !target.admission.remoteViewer &&
+        target.c.open
+      )
         target.c.send(msg);
+      else {
+        this.pendingCommands.push({ sender, input, at: queuedAt });
+        this.pendingCommands = this.pendingCommands.slice(-100);
+      }
     }
+  }
+  flushCommands() {
+    const pending = this.pendingCommands.splice(0);
+    for (const item of pending)
+      if (Date.now() - item.at < 30000)
+        this.routeInput(item.sender, item.input, item.at);
   }
   sendPrivate(target, payload) {
     if (

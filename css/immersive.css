@@ -4,6 +4,49 @@
   padding-right: 30px;
   margin-bottom: 8px;
 }
+.live-game-banner .live-game-symbol {
+  display: grid;
+  place-items: center;
+  flex: 0 0 36px;
+  height: 36px;
+  color: #866b92;
+  border-radius: 12px;
+  background: #e9dcec;
+}
+.live-game-banner > span:nth-child(2) {
+  flex: 1;
+  min-width: 0;
+}
+.live-game-banner strong,
+.live-game-banner small {
+  display: block;
+}
+.live-game-banner strong {
+  font-size: 12px;
+}
+.live-game-banner small {
+  font-size: 10px;
+  color: #9d858c;
+  margin-top: 3px;
+}
+.live-game-banner {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.game-invitation .invitation-symbol {
+  display: grid;
+  place-items: center;
+  width: 76px;
+  height: 76px;
+  border-radius: 24px;
+  margin: 16px auto 24px;
+  background: #e7d8ec;
+  color: #8a6899;
+}
+.game-invitation .invitation-symbol .icon {
+  width: 36px;
+  height: 36px;
+}
 #sheet.game-expanded:has(.instrument) {
   background: #151b2c;
   color: #e9e3ed;
@@ -201,7 +244,103 @@
   display: none;
 }
 .inline-avatar-picker .avatar-preview {
-  font-size: 30px;
+  font-size: 22px;
+}
+.inline-avatar-picker summary {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+}
+.inline-avatar-picker {
+  min-width: 44px;
+}
+.topline .activity-bell {
+  order: 1;
+  margin-left: auto;
+}
+.topline .room-pill {
+  order: 2;
+  margin-left: 0;
+}
+.catalogue-filters {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 16px 0 12px;
+}
+.catalogue-filters label {
+  min-width: 0;
+  font-size: 10px;
+  color: #8c7b7c;
+}
+.catalogue-filters select {
+  width: 100%;
+  min-width: 0;
+  padding: 12px 18px 12px 9px;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  border-radius: 13px;
+  background: #fff8ef;
+}
+.catalogue-quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.catalogue-quick .chip {
+  min-height: 38px;
+  font-size: 11px;
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+}
+.catalogue-quick [aria-pressed="true"] {
+  background: #ead1dc;
+  color: #844967;
+}
+.catalogue-quick .icon {
+  width: 14px;
+  height: 14px;
+}
+.catalogue-hint {
+  color: #9d8786;
+  font-size: 11px;
+}
+.catalogue-paged {
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(3, 180px);
+  grid-auto-columns: min(100%, 360px);
+  gap: 10px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x proximity;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+  padding: 4px 2px 14px;
+}
+.catalogue-paged > .idea-card {
+  height: 180px;
+  min-height: 0;
+  margin: 0;
+  overflow: hidden;
+  scroll-snap-align: start;
+}
+.catalogue-paged .art-button {
+  max-height: 162px;
+}
+.catalogue-paged .idea-card h3 {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+.catalogue-paged .idea-card p {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
 }
 .inline-avatar-picker .emoji-gallery {
   position: absolute;

@@ -64,6 +64,15 @@ import {
 const app = document.querySelector("#app");
 document.addEventListener("change", (e) => {
   captureProfileDraft(e);
+  if (e.target.matches("[data-catalogue-filter]")) {
+    const key = e.target.dataset.catalogueFilter;
+    if (["ideaLocation", "category", "mood"].includes(key)) {
+      state[key] = e.target.value;
+      state.catalogueReset = true;
+      render();
+    }
+    return;
+  }
   if (!e.target.matches(".inline-avatar-picker input[name=avatar]")) return;
   const picker = e.target.closest(".inline-avatar-picker");
   picker.querySelector(".avatar-preview").textContent = e.target.value;
@@ -185,22 +194,24 @@ function render() {
   });
   state.unread = unreadEvents(store).length;
   const scroll = window.scrollY;
+  const profilePickerOpen = !!document.querySelector(
+    ".inline-avatar-picker details[open]",
+  );
+  const catalogueScroll = state.catalogueReset
+    ? 0
+    : document.querySelector(".catalogue-paged")?.scrollLeft ||
+      state.catalogueScroll ||
+      0;
   const feedScroll =
     document.querySelector("#recommendation-feed")?.scrollLeft || 0;
   app.innerHTML = `<div class="app-shell ${store.authCapacity > 2 ? "friends-theme" : ""}">${header(state)}<main id="main">${Object.values(
     state.invites || {},
   )
-    .filter(
-      (f) =>
-        !f.finished &&
-        (f.kind === state.partyFrame?.kind ||
-          !f.public?.joined?.includes(userId)),
-    )
+    .filter((f) => !f.finished)
     .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0))
-    .slice(-1)
     .map(
       (f) =>
-        `<aside class="live-game-banner"><span>${esc(f.title)}</span>${btn(f.public?.joined?.includes(userId) ? "Вернуться" : "Присоединиться", "open-live-game", "soft", `data-id="${esc(f.kind)}"`)}${f.controller === userId && f.public?.joined?.length === 0 ? btn("Завершить", "end-empty-game", "text", `data-id="${esc(f.kind)}"`) : ""}</aside>`,
+        `<aside class="live-game-banner"><span class="live-game-symbol">${icon(["meditation", "soundgarden"].includes(f.kind) ? "music" : "games")}</span><span><strong>${esc(f.title)}</strong><small>${esc(store.users.find((u) => u.localUserId === f.controller)?.displayName || "Ваш человек")} · ${f.stage === "lobby" ? "собирает игроков" : "игра продолжается"}</small></span>${btn(f.public?.joined?.includes(userId) ? "Вернуться" : "Войти", "open-live-game", "soft", `data-id="${esc(f.kind)}"`)}${f.controller === userId && f.public?.joined?.length === 0 ? btn("Завершить", "end-empty-game", "text", `data-id="${esc(f.kind)}"`) : ""}</aside>`,
     )
     .join(
       "",
@@ -216,6 +227,14 @@ function render() {
     ),
   )}${["ideas", "build"].includes(state.tab) ? `<button class="discover-fab" data-action="swipe" aria-label="Листать идеи">${icon("shuffle")}<span>Листать идеи</span></button>` : ""}${state.connectedIntro ? '<div class="connection-intro" aria-live="polite"><span>✨</span><h2>Вы вместе</h2><p>Свои люди. Одна маленькая вселенная.</p></div>' : ""}</div>`;
   window.scrollTo(0, scroll);
+  if (profilePickerOpen) {
+    const picker = document.querySelector(".inline-avatar-picker details");
+    if (picker) picker.open = true;
+  }
+  const catalogue = document.querySelector(".catalogue-paged");
+  if (catalogue) catalogue.scrollLeft = catalogueScroll;
+  state.catalogueScroll = catalogueScroll;
+  state.catalogueReset = false;
   const feed = document.querySelector("#recommendation-feed");
   if (feed) feed.scrollLeft = feedScroll;
 }
@@ -900,6 +919,21 @@ async function action(a, el) {
         detail(shuffle(store.ideas)[0].id);
       } else render();
       break;
+    case "catalogue-free":
+      state.onlyFree = !state.onlyFree;
+      state.catalogueReset = true;
+      render();
+      break;
+    case "catalogue-quick":
+      state.maxDuration = state.maxDuration === 20 ? 0 : 20;
+      state.catalogueReset = true;
+      render();
+      break;
+    case "catalogue-liked":
+      state.onlyFavorites = !state.onlyFavorites;
+      state.catalogueReset = true;
+      render();
+      break;
     case "filter":
       filterSheet();
       break;
@@ -911,6 +945,9 @@ async function action(a, el) {
         showSkipped: false,
         category: "Всё",
         search: "",
+        ideaLocation: "",
+        onlyFree: false,
+        catalogueReset: true,
       });
       render();
       break;
@@ -929,8 +966,8 @@ async function action(a, el) {
       });
       render();
       document
-        .querySelector(".categories")
-        .scrollIntoView({ behavior: "smooth" });
+        .querySelector(".catalogue-filters")
+        ?.scrollIntoView({ behavior: "smooth" });
       break;
     case "favorites":
       state.onlyFavorites = true;

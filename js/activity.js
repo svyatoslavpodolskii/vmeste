@@ -1,7 +1,14 @@
 import { esc, icon, sheet } from "./ui.js";
 export function activityEvents(store) {
   return store.data.plans
-    .filter((p) => !p.deletedAt && p.worldEvent)
+    .filter(
+      (p) =>
+        !p.deletedAt &&
+        p.worldEvent &&
+        !["water", "explore", "request", "pack", "turn-answer"].includes(
+          p.worldEvent.type,
+        ),
+    )
     .map((p) => ({ ...p.worldEvent, id: p.id, author: p.authorId }))
     .sort((a, b) => b.at - a.at || b.id.localeCompare(a.id));
 }

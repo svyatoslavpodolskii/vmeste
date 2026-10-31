@@ -243,12 +243,12 @@ try {
   await close(b);
   await Promise.all([nav(a, "games"), nav(b, "games")]);
   await Promise.all([
-    a.locator('[data-action="play"][data-id="museum"]').click(),
-    b.locator('[data-action="play"][data-id="museum"]').click(),
+    a.locator('[data-action="play"][data-id="poem"]').click(),
+    b.locator('[data-action="play"][data-id="poem"]').click(),
   ]);
   await m.waitForFunction(
     () =>
-      window.testFrame?.kind === "museum" &&
+      window.testFrame?.kind === "poem" &&
       window.testFrame.public.joined.length === 2,
   );
   const round = await m.evaluate(() => window.testFrame.round);
@@ -261,7 +261,7 @@ try {
   );
   await a.reload();
   await a.locator(".bottom-nav").waitFor();
-  await a.locator('[data-action="open-live-game"][data-id="museum"]').click();
+  await a.locator('[data-action="open-live-game"][data-id="poem"]').click();
   await a.locator("#party-panel").waitFor();
   assert.equal(await m.evaluate(() => window.testFrame.round), round);
   console.log(

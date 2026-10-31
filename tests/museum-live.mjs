@@ -46,7 +46,7 @@ async function match(count) {
     contexts = [root],
     pages = [a];
   for (let i = 1; i < count; i++) {
-    const x = await join(a, url, ["", "Борис", "Вика"][i]);
+    const x = await join(a, url, ["", "Борис", "Вика", "Глеб"][i]);
     contexts.push(x);
     pages.push(x.p);
   }
@@ -163,7 +163,7 @@ async function match(count) {
 }
 try {
   await match(3);
-  await match(2);
+  await match(4);
   assert.deepEqual(errors, []);
 } finally {
   await browser.close();

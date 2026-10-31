@@ -1,0 +1,333 @@
+.circuit-home > h2 {
+  font-size: clamp(32px, 6vw, 56px);
+  margin: 12px 0;
+}
+.circuit-home > p {
+  max-width: 620px;
+  color: #8c7776;
+  line-height: 1.7;
+}
+.circuit-options {
+  display: grid;
+  gap: 10px;
+  margin: 18px 0;
+}
+.circuit-options .btn {
+  padding: 18px;
+  white-space: normal;
+  text-align: left;
+  border: 1px solid #e8d8dc;
+  box-shadow: none;
+}
+.circuit-options strong,
+.circuit-options small {
+  display: block;
+}
+.circuit-options small {
+  margin-top: 5px;
+  color: #947d83;
+}
+.circuit-options [aria-pressed="true"],
+.circuit-buttons [aria-pressed="true"],
+.orbit-choice [aria-pressed="true"] {
+  background: #e8c9d6;
+  border-color: #b66c89;
+  color: #68384c;
+}
+.circuit-scene {
+  background:
+    radial-gradient(ellipse at 25% 0, #3a665f80, transparent 65%),
+    linear-gradient(145deg, #1c2f39, #292138);
+  color: #e9dce5;
+  border-radius: 26px;
+  padding: 26px 20px;
+  text-align: center;
+  overflow: hidden;
+}
+.circuit-scene .eyebrow {
+  color: #a8c3bc;
+}
+.circuit-scene h2 {
+  color: #f7e8cf;
+  font-size: clamp(26px, 4vw, 48px);
+  margin: 24px 0 12px;
+}
+.circuit-scene > p {
+  color: #c9c6d1;
+  font-size: 13px;
+  line-height: 1.65;
+  max-width: 680px;
+  margin-left: auto;
+  margin-right: auto;
+}
+.circuit-route {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 24px;
+}
+.circuit-route i {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: #ffffff1a;
+}
+.circuit-route i.passed {
+  background: #a6caaa;
+}
+.circuit-route i.current {
+  background: #f5d5a4;
+  box-shadow:
+    0 0 0 4px #f5d5a419,
+    0 0 16px #f5d5a466;
+}
+.team-light {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  justify-content: center;
+  margin: 24px 0;
+}
+.team-light strong {
+  font-size: 40px;
+  font-weight: 650;
+  color: #f0d5a4;
+  font-variant-numeric: tabular-nums;
+}
+.team-light span {
+  font-size: 11px;
+  color: #b9b1bd;
+}
+.circuit-result {
+  padding: 22px;
+  background: #ffffff0a;
+  border: 1px solid #c6d3bb3a;
+  border-radius: 20px;
+}
+.circuit-result strong {
+  font-size: 36px;
+  color: #b6d4af;
+}
+.circuit-result small {
+  color: #b2b2bc;
+}
+.circuit-feedback {
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid #e6c99b44;
+  background: #e6c99b0a;
+}
+.circuit-pattern {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin: 24px 0;
+}
+.circuit-pattern span {
+  width: 38px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  background: #ffffff14;
+  border-radius: 14px;
+  color: #ead1a1;
+  font-size: 25px;
+}
+.circuit-buttons {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 20px 0;
+}
+.circuit-buttons > .btn {
+  flex: 1;
+  min-width: 65px;
+  min-height: 62px;
+  font-size: 20px;
+}
+.circuit-maze {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  max-width: 420px;
+  margin: 20px auto;
+  padding: 8px;
+  gap: 4px;
+  background: #1d2834;
+  border-radius: 17px;
+}
+.circuit-maze i {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  border-radius: 7px;
+  background: #34414a;
+  color: #f2dca9;
+  font-size: 24px;
+  font-style: normal;
+}
+.circuit-maze .wall {
+  background: #161e29;
+  box-shadow: inset 0 0 0 1px #fff1;
+}
+.circuit-maze .traveller {
+  background: #b6cfa0;
+  color: #263b34;
+}
+.circuit-wires {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  max-width: 440px;
+  margin: 22px auto;
+  gap: 5px;
+  padding: 7px;
+  border-radius: 18px;
+  background: #182735;
+}
+.wire-tile {
+  padding: 0;
+  aspect-ratio: 1;
+  border: 1px solid #47605e;
+  background: #30434c;
+  border-radius: 12px;
+  overflow: hidden;
+  color: #a6bdb3;
+}
+.wire-tile:disabled {
+  opacity: 0.85;
+}
+.wire-tile:not(:disabled) {
+  border: 2px solid #ead4a1;
+}
+.wire-tile svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.wire-tile path {
+  stroke: currentColor;
+  stroke-width: 8;
+  fill: none;
+  stroke-linecap: round;
+}
+.wire-tile circle {
+  fill: currentColor;
+}
+.wire-tile.lit {
+  color: #ffe5a9;
+  background: #49635d;
+}
+.wire-tile.relay circle {
+  stroke: #f4d7a4;
+  stroke-width: 2;
+  fill: #1c2935;
+}
+.wire-tile.lit.relay circle {
+  fill: #f5e5a9;
+}
+.timing-track {
+  position: relative;
+  height: 76px;
+  border-radius: 18px;
+  border: 1px solid #d7bcca;
+  background: linear-gradient(
+    90deg,
+    #f4e8ec 40%,
+    #dce8d2 40%,
+    #dce8d2 60%,
+    #f4e8ec 60%
+  );
+  overflow: hidden;
+  margin: 26px 0;
+}
+.timing-track > i {
+  position: absolute;
+  inset: 0;
+  animation: run-beam linear infinite;
+  pointer-events: none;
+}
+.timing-track > i::before {
+  content: "";
+  position: absolute;
+  top: 25px;
+  left: 0;
+  width: 24px;
+  height: 24px;
+  background: #b16b8e;
+  border: 2px solid white;
+  border-radius: 50%;
+  box-shadow: 0 0 15px #a9739270;
+}
+.timing-track > b {
+  position: absolute;
+  left: 50%;
+  top: 12px;
+  bottom: 12px;
+  border-left: 1px solid #758d6680;
+}
+@keyframes run-beam {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(calc(100% - 28px));
+  }
+}
+.orbit-choice {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin: 20px 0;
+}
+.orbit-choice .btn {
+  min-height: 70px;
+}
+.circuit-records {
+  display: grid;
+  gap: 10px;
+}
+.circuit-records article {
+  padding: 20px;
+  background: #edf0e3;
+  border-radius: 19px;
+}
+.circuit-records strong {
+  color: #526a4e;
+}
+.circuit-records p {
+  margin: 8px 0;
+}
+.circuit-records small {
+  color: #8f8576;
+}
+.circuit-catalogue article {
+  padding: 16px 0;
+  border-top: 1px solid #e6d9d5;
+}
+.circuit-catalogue p {
+  font-size: 12px;
+  color: #8d7e7e;
+  line-height: 1.6;
+}
+.recipe-target {
+  font-size: 25px;
+  text-align: center;
+  padding: 20px;
+  background: #eee7d5;
+  border-radius: 18px;
+}
+.projector .circuit-scene {
+  padding: 5vh 5vw;
+  min-height: 65vh;
+}
+.projector .circuit-scene > p {
+  font-size: 22px;
+}
+.projector .team-light strong {
+  font-size: 70px;
+}
+.projector .circuit-maze,
+.projector .circuit-wires {
+  width: min(45vw, 450px);
+}

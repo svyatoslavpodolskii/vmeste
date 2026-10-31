@@ -451,7 +451,13 @@ export class NatureSound {
       const ctx = this.context;
       this.master.gain.setTargetAtTime(0.0001, ctx.currentTime, 0.2);
       await new Promise((r) => setTimeout(r, 800));
-      if (!this.started) await ctx.suspend();
+      if (!this.started && this.context === ctx && ctx.state !== "closed") {
+        try {
+          await ctx.suspend();
+        } catch (error) {
+          if (ctx.state !== "closed") throw error;
+        }
+      }
     }
   }
   destroy() {

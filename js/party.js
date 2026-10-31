@@ -1,6 +1,17 @@
 import { worldKinds, worldScreen } from "./worlds.js";
 import { TURN_WORLD, turnScreen } from "./turn-games.js";
 import {
+  initCircuit,
+  circuitCommand,
+  circuitPublic,
+  circuitSecret,
+  circuitScreen,
+  circuitControls,
+  circuitHome,
+  circuitRecordView,
+  CIRCUIT_VERSION,
+} from "./coop-circuit.js";
+import {
   expeditionKinds,
   expeditionTitles,
   initExpedition,
@@ -204,8 +215,10 @@ export function partyScreen(f, screen = false) {
     players = Array.isArray(p.players) ? p.players.slice(0, 10) : [];
   let body = "";
   if (f.stage === "lobby")
-    return `<section class="table-lobby"><span class="eyebrow">СОБИРАЕМСЯ ЗА ОДНИМ СТОЛОМ</span><h2>${esc(f.title)}</h2><p>Игра начнётся, когда все присоединятся и нажмут «Готов».</p><div class="lobby-players">${players.map((u) => `<div class="${p.readyPlayers?.includes(u.id) ? "is-ready" : ""}"><span>${esc(u.avatar)}</span><strong>${esc(u.name)}</strong><small>${p.readyPlayers?.includes(u.id) ? "Готов" : p.joined?.includes(u.id) ? "В комнате" : "Приглашён"}</small></div>`).join("")}</div><p class="fine">${p.requiresScreen ? `${p.screenCount ? "Общий экран подключён" : "Подключите ПК как общий экран — это часть игры"}` : "Один общий стол · одинаковые лобби объединяются автоматически"}</p></section>`;
-  if ([...expeditionKinds, "race", "beacon"].includes(f.kind))
+    return `<section class="table-lobby"><span class="eyebrow">СОБИРАЕМСЯ ЗА ОДНИМ СТОЛОМ</span><h2>${esc(f.title)}</h2><p>Игра начнётся, когда присоединятся минимум ${p.minPlayers || 2} участника и все нажмут «Готов».</p><div class="lobby-players">${players.map((u) => `<div class="${p.readyPlayers?.includes(u.id) ? "is-ready" : ""}"><span>${esc(u.avatar)}</span><strong>${esc(u.name)}</strong><small>${p.readyPlayers?.includes(u.id) ? "Готов" : p.joined?.includes(u.id) ? "В комнате" : "Приглашён"}</small></div>`).join("")}</div><p class="fine">${p.requiresScreen ? `${p.screenCount ? "Общий экран подключён" : "Подключите ПК как общий экран — это часть игры"}` : "Один общий стол · одинаковые лобби объединяются автоматически"}</p></section>`;
+  if (f.kind === "race" && p.rulesVersion === CIRCUIT_VERSION)
+    body = circuitScreen(f);
+  else if ([...expeditionKinds, "race", "beacon"].includes(f.kind))
     body = expeditionScreen(f, screen);
   else if (deckKinds.includes(f.kind)) body = deckScreen(f);
   else if (f.kind === "frequency") body = frequencyScreen(f);
@@ -243,6 +256,9 @@ export function partyScreen(f, screen = false) {
 export class PartyGames {
   constructor(options) {
     this.options = options;
+    this.deviceId =
+      localStorage.getItem("vmeste-device") || crypto.randomUUID();
+    localStorage.setItem("vmeste-device", this.deviceId);
     this.secrets = new Map();
     this.frame = null;
     this.state = null;
@@ -253,6 +269,14 @@ export class PartyGames {
     this.drafts = new Map();
     this.markQueue = Promise.resolve();
     window.addEventListener("vmeste-peer-ready", () => this.restore());
+    window.addEventListener("vmeste-game-connected", () => {
+      if (this.state && this.hosting) {
+        this.broadcast();
+        this.privateInstructions();
+      }
+      if (this.opened && this.frame && document.querySelector("#party-panel"))
+        this.input({ action: "join" });
+    });
     window.addEventListener("vmeste-game-view", (e) => this.receive(e.detail));
     window.addEventListener("vmeste-game-input", (e) =>
       this.command(e.detail.sender, e.detail.input),
@@ -314,6 +338,7 @@ export class PartyGames {
       document.querySelector("#sheet").classList.remove("game-expanded");
       if (
         this.frame &&
+        !this.frame.finished &&
         !["soundgarden", "meditation"].includes(this.frame.kind)
       )
         this.input({ action: "leave" });
@@ -370,7 +395,28 @@ export class PartyGames {
     this.opened = false;
     this.secrets.clear();
   }
-  start(kind) {
+  start(kind, launch = {}) {
+    if (kind === "museum" && (this.store.authCapacity || 2) < 3) {
+      sheet(
+        `<div class="game-invitation"><span class="invitation-symbol">${icon("gallery")}</span><span class="eyebrow">ОТ ТРЁХ ИГРОКОВ</span><h2>Музей для компании</h2><p>Здесь нужны художник и хотя бы два автора выдуманных табличек. Вдвоём блеф не работает — поэтому эта коробка доступна в комнате для компании.</p><p>Для двоих есть рисование с угадыванием вслух.</p><button class="btn primary wide" data-action="play" data-id="draw">Нарисуй и объясни</button></div>`,
+      );
+      return;
+    }
+    if (kind === "race" && !launch.circuit) {
+      this.circuitMenu();
+      return;
+    }
+    if (
+      kind === "race" &&
+      launch.circuit &&
+      this.tables.get(kind)?.frame.public.rulesVersion !== CIRCUIT_VERSION
+    ) {
+      this.tables.delete(kind);
+      if (this.frame?.kind === kind) {
+        this.frame = null;
+        this.state = null;
+      }
+    }
     if (this.frame?.kind === kind && !this.frame.finished) {
       this.open();
       return;
@@ -387,6 +433,7 @@ export class PartyGames {
       this.open();
       return;
     }
+    this.retireHostedExcept(kind);
     if (
       ["soundgarden", "meditation"].includes(kind) &&
       this.audioFrame?.kind !== kind
@@ -413,6 +460,8 @@ export class PartyGames {
       players.push({ id: this.userId, name: "Вы", avatar: "✨" });
     const s = (this.state = {
       kind,
+      ownerDevice: this.deviceId,
+      runLength: launch.length || 8,
       round: crypto.randomUUID(),
       players,
       started: 0,
@@ -498,8 +547,8 @@ export class PartyGames {
         ]),
       );
     if (kind === "meditation") arrangeMeditation(s);
-    if ([...expeditionKinds, "race", "beacon"].includes(kind))
-      initExpedition(s);
+    if (kind === "race") initCircuit(s);
+    if ([...expeditionKinds, "beacon"].includes(kind)) initExpedition(s);
     this.broadcast();
     this.open();
   }
@@ -550,6 +599,13 @@ export class PartyGames {
   }
 
   publicFrame() {
+    return {
+      ...this.buildPublicFrame(),
+      ownerDevice: this.state.ownerDevice || this.deviceId,
+      closedAt: this.state.closedAt || 0,
+    };
+  }
+  buildPublicFrame() {
     const s = this.state,
       p = {
         players: s.players,
@@ -572,15 +628,33 @@ export class PartyGames {
         createdAt: s.createdAt,
         revision: s.revision,
         public: {
+          rulesVersion: s.rulesVersion,
+          runLength: s.runLength,
           players: s.players,
           joined: s.joined,
           readyPlayers: s.readyPlayers,
           requiresScreen: s.kind === "rift",
+          minPlayers: s.kind === "museum" ? 3 : 2,
           screenCount: this.peer?.onlineDisplays?.() || 0,
         },
         controller: this.userId,
         controllerClient: this.peer?.peer?.id,
         elapsed: 0,
+      };
+    if (s.kind === "race" && s.rulesVersion === CIRCUIT_VERSION)
+      return {
+        kind: s.kind,
+        round: s.round,
+        title: partyTitles.race,
+        text: s.trial.instruction,
+        stage: s.stage,
+        createdAt: s.createdAt,
+        revision: s.revision,
+        public: { ...circuitPublic(s), players: s.players, joined: s.joined },
+        controller: this.userId,
+        controllerClient: this.peer?.peer?.id,
+        finished: !!s.finished,
+        elapsed: s.finished ? s.elapsed : Date.now() - s.started,
       };
     if ([...expeditionKinds, "race", "beacon"].includes(s.kind))
       return {
@@ -712,6 +786,7 @@ export class PartyGames {
           ? "Настройте настроение — пусть звуковой пейзаж дышит рядом."
           : "Восемь слоёв на каждом телефоне. Партии разные, влияние общее.";
       p.contributors = s.contributors;
+      p.audioPaused = !!s.audioPaused;
       p.warmth =
         Object.values(s.contributors).reduce((n, c) => n + c.moods[0], 0) /
         s.players.length;
@@ -734,6 +809,13 @@ export class PartyGames {
   }
   broadcast() {
     this.state.revision = (this.state.revision || 0) + 1;
+    if (this.state.kind === "race")
+      try {
+        localStorage.setItem(
+          `vmeste:circuit:${this.store.roomId}:${this.userId}`,
+          JSON.stringify(this.state),
+        );
+      } catch {}
     if (!this.backgroundDispatch)
       try {
         localStorage.setItem(
@@ -749,6 +831,7 @@ export class PartyGames {
     )
       this.audioFrame = this.frame;
     this.peer?.publishGame(this.frame);
+    this.applyAudioState(this.frame);
     if (!this.backgroundDispatch) this.options.onFrame?.(this.frame);
     else this.options.onInvite?.(this.frame);
     if (this.opened) this.render();
@@ -763,12 +846,34 @@ export class PartyGames {
   receive(frame) {
     if (!partyKinds.includes(frame.kind)) return;
     const existing = this.tables.get(frame.kind);
+    if (frame.finished && existing?.state?.round === frame.round) {
+      existing.state.finished = true;
+      existing.state.closedAt = frame.closedAt || existing.state.closedAt;
+      if (this.state?.round === frame.round) this.state.finished = true;
+      try {
+        const key = `vmeste:session:${this.store.roomId}:${this.userId}`;
+        if (JSON.parse(localStorage.getItem(key))?.round === frame.round)
+          localStorage.setItem(key, JSON.stringify(existing.state));
+        if (frame.kind === "race")
+          localStorage.setItem(
+            `vmeste:circuit:${this.store.roomId}:${this.userId}`,
+            JSON.stringify(existing.state),
+          );
+      } catch {}
+    }
+    if (frame.finished && this.audioFrame?.round === frame.round) {
+      this.audio?.destroy();
+      this.audio = null;
+      this.audioFrame = null;
+      this.player();
+    }
     this.tables.set(frame.kind, {
       frame,
       state: existing?.state?.round === frame.round ? existing.state : null,
     });
     if (this.audioFrame?.kind === frame.kind) {
       this.audioFrame = frame;
+      this.applyAudioState(frame);
       if (this.audio?.started)
         this.audio.apply(
           frame.public.contributors || {},
@@ -821,12 +926,14 @@ export class PartyGames {
     if (
       frame.stage === "lobby" &&
       frame.controller !== this.userId &&
-      !this.invited.has(frame.round)
+      !!frame.invitedAt &&
+      !frame.finished &&
+      !this.invited.has(frame.round + ":" + frame.invitedAt)
     ) {
-      this.invited.add(frame.round);
+      this.invited.add(frame.round + ":" + frame.invitedAt);
       if (!document.querySelector("#sheet").open) {
         sheet(
-          `<div class="game-invitation"><span class="eyebrow">ВАС ПРИГЛАШАЮТ</span><h2>${esc(frame.title)}</h2><p>Ваш человек уже ждёт за общим столом.</p><button class="btn primary wide" data-party="join">Присоединиться</button></div>`,
+          `<div class="game-invitation"><span class="invitation-symbol">${icon("games")}</span><span class="eyebrow">ВАС ПРИГЛАШАЮТ</span><h2>${esc(frame.title)}</h2><p>Ваш человек ждёт за общим столом. Приглашение останется в разделе игр.</p><button class="btn primary wide" data-party="join">Присоединиться</button><button class="btn text wide" data-action="close">Позже</button></div>`,
         );
       }
     }
@@ -850,7 +957,9 @@ export class PartyGames {
         round: s.round,
         turn: deckKinds.includes(s.kind) ? s.deck.index : s.turn || 0,
       };
-      if ([...expeditionKinds, "race", "beacon"].includes(s.kind))
+      if (s.kind === "race" && s.rulesVersion === CIRCUIT_VERSION)
+        Object.assign(payload, circuitSecret(s, u.id));
+      else if ([...expeditionKinds, "race", "beacon"].includes(s.kind))
         Object.assign(payload, expeditionSecret(s, u.id));
       if (
         s.kind === "mime" &&
@@ -903,6 +1012,97 @@ export class PartyGames {
       });
       toast("Игра завершена. Приглашение закрыто");
     }
+  }
+  applyAudioState(frame) {
+    if (this.audioFrame?.round !== frame.round || !this.audio) return;
+    if (frame.finished) {
+      this.audio.destroy();
+      this.audio = null;
+      this.audioFrame = null;
+    } else if (frame.public.audioPaused && this.audio.started)
+      this.audio.stop();
+    else if (!frame.public.audioPaused && !this.audio.started)
+      this.audio
+        .start()
+        .then(() => {
+          if (this.audioFrame?.round === frame.round && this.audio)
+            this.audio.apply(
+              frame.public.contributors || {},
+              this.userId,
+              frame.kind,
+            );
+          this.player();
+          if (this.opened && this.frame?.round === frame.round) this.controls();
+        })
+        .catch(() => {});
+  }
+  retireHostedExcept(kind) {
+    const previous = { state: this.state, frame: this.frame };
+    for (const [otherKind, table] of this.tables) {
+      if (
+        otherKind === kind ||
+        table.frame.finished ||
+        !table.state ||
+        table.frame.controllerClient !== this.peer?.peer?.id
+      )
+        continue;
+      const state = table.state;
+      state.finished = true;
+      state.closedAt = Date.now();
+      state.revision = (state.revision || 0) + 1;
+      state.elapsed = state.started ? Date.now() - state.started : 0;
+      this.state = state;
+      const frame = this.publicFrame();
+      table.frame = frame;
+      this.peer?.publishGame(frame);
+      this.options.onInvite?.(frame);
+      if (state.kind === "race")
+        localStorage.setItem(
+          `vmeste:circuit:${this.store.roomId}:${this.userId}`,
+          JSON.stringify(state),
+        );
+      if (this.audioFrame?.round === frame.round) {
+        this.audio?.destroy();
+        this.audio = null;
+        this.audioFrame = null;
+        this.player();
+      }
+    }
+    this.state = previous.state;
+    this.frame = previous.frame;
+  }
+  circuitMenu() {
+    if (
+      this.opened &&
+      this.frame &&
+      !["meditation", "soundgarden"].includes(this.frame.kind)
+    )
+      this.input({ action: "leave" });
+    this.opened = false;
+    let table = this.tables.get("race");
+    if (!table)
+      try {
+        const saved = JSON.parse(
+          localStorage.getItem(
+            `vmeste:circuit:${this.store.roomId}:${this.userId}`,
+          ),
+        );
+        if (
+          saved?.rulesVersion === CIRCUIT_VERSION &&
+          saved.kind === "race" &&
+          !saved.finished
+        ) {
+          const previous = this.state;
+          this.state = saved;
+          table = { state: saved, frame: this.publicFrame() };
+          this.state = previous;
+          this.tables.set("race", table);
+        }
+      } catch {}
+    const active =
+      table?.frame.public.rulesVersion === CIRCUIT_VERSION ? table.frame : null;
+    sheet(circuitHome(this.store, active));
+    document.querySelector("#sheet").scrollTop = 0;
   }
   command(sender, input) {
     if (input?.round === this.frame?.round)
@@ -992,6 +1192,24 @@ export class PartyGames {
     }
     if (!s.players.some((u) => u.id === sender) || !s.joined.includes(sender))
       return;
+    if (
+      ["meditation", "soundgarden"].includes(s.kind) &&
+      input.action === "audio-close"
+    ) {
+      s.finished = true;
+      s.closedAt = Date.now();
+      s.elapsed = s.started ? Date.now() - s.started : 0;
+      this.broadcast();
+      return;
+    }
+    if (
+      ["meditation", "soundgarden"].includes(s.kind) &&
+      input.action === "audio-pause"
+    ) {
+      s.audioPaused = !!input.paused;
+      this.broadcast();
+      return;
+    }
     if (s.stage === "lobby") {
       if (input.action === "ready") {
         s.readyPlayers = s.readyPlayers.includes(sender)
@@ -999,6 +1217,35 @@ export class PartyGames {
           : [...s.readyPlayers, sender];
         this.beginIfReady();
         this.broadcast();
+      }
+      return;
+    }
+    if (s.kind === "race" && s.rulesVersion === CIRCUIT_VERSION) {
+      if (circuitCommand(s, sender, input)) {
+        if (s.finished && !s.recorded) {
+          s.recorded = true;
+          this.store
+            .save("plans", {
+              id: `${this.store.roomId}:record:${s.round}`,
+              title: "Светлячки · общий забег",
+              items: [],
+              arcadeRecord: {
+                kind: "race",
+                rulesVersion: CIRCUIT_VERSION,
+                seconds: s.elapsed / 1000,
+                players: s.players.map((p) => p.id),
+                teamScore: s.teamScore,
+                runLength: s.runLength,
+                journal: s.journal,
+                route: s.route,
+                createdAt: Date.now(),
+              },
+            })
+            .catch(() => toast("Не удалось сохранить общий рекорд"));
+        }
+        this.broadcast();
+        this.privateInstructions();
+        this.render(true);
       }
       return;
     }
@@ -1388,6 +1635,7 @@ export class PartyGames {
   async finish() {
     const s = this.state;
     if (!s || s.finished) return;
+    s.closedAt = Date.now();
     if (s.stage === "lobby") {
       s.finished = true;
       s.elapsed = 0;
@@ -1396,6 +1644,10 @@ export class PartyGames {
     }
     s.finished = true;
     s.elapsed = Date.now() - s.started;
+    if (s.kind === "race" && s.rulesVersion === CIRCUIT_VERSION) {
+      this.broadcast();
+      return;
+    }
     if (
       (s.kind === "frequency" && s.log.length < s.totalRounds) ||
       !["draw", "beacon", "race", "museum", "frequency"].includes(s.kind)
@@ -1432,7 +1684,7 @@ export class PartyGames {
   }
   open() {
     if (!partyKinds.includes(this.frame?.kind)) return;
-    this.input({ action: "join" });
+    if (!this.frame.finished) this.input({ action: "join" });
     this.opened = true;
     this.render(true);
     document.querySelector("#sheet").scrollTop = 0;
@@ -1456,6 +1708,8 @@ export class PartyGames {
       f.public.phase +
       ":" +
       !!f.public.solo +
+      ":" +
+      !!f.public.audioPaused +
       ":" +
       !!f.public.readyPlayers?.includes(this.userId) +
       ":" +
@@ -1545,7 +1799,9 @@ export class PartyGames {
     let html = "";
     if (f.stage === "lobby") {
       html = `<button class="btn primary wide" data-party="ready">${p.readyPlayers?.includes(this.userId) ? "Отменить готовность" : "Готов"}</button><p class="muted center">${p.joined?.length || 1} за столом · начало после готовности всех</p>${this.hosting && ["soundgarden", "meditation"].includes(f.kind) ? '<button class="btn lavender wide" data-party="solo">Слушать одному · все пульты</button>' : ""}${this.hosting ? `<button class="btn soft wide" data-party="invite" ${f.invitedAt ? "disabled" : ""}>${f.invitedAt ? "Приглашение активно" : "Отправить приглашение"}</button><p class="fine center">Приглашение останется в играх до закрытия лобби и не прервёт другую игру.</p><button class="btn text wide" data-party="cancel-lobby">Закрыть лобби</button>` : ""}`;
-    } else if ([...expeditionKinds, "race", "beacon"].includes(f.kind))
+    } else if (f.kind === "race" && p.rulesVersion === CIRCUIT_VERSION)
+      html = circuitControls(f, this.userId, secret);
+    else if ([...expeditionKinds, "race", "beacon"].includes(f.kind))
       html = expeditionControls(f, this.userId, secret);
     else if (deckKinds.includes(f.kind))
       html = deckControls(f, this.userId, secret);
@@ -1645,8 +1901,7 @@ export class PartyGames {
       html +=
         '<details class="session-menu"><summary>Управление партией</summary><p>Закончить игру у всех участников и сохранить результат.</p><button class="btn text wide" data-party="finish">Закончить у всех</button></details>';
     }
-    if (p.historyDepth)
-      html += `<button class="btn soft wide" data-party="round-back">${icon("back")} Предыдущий раунд</button>`;
+
     box.innerHTML = html;
     if (
       ["word", "poem"].includes(f.kind) &&
@@ -1719,13 +1974,13 @@ export class PartyGames {
     if (
       !s ||
       s.stage !== "lobby" ||
-      s.joined.length < (s.solo ? 1 : 2) ||
+      s.joined.length < (s.solo ? 1 : s.kind === "museum" ? 3 : 2) ||
       !s.players.every((u) => s.readyPlayers.includes(u.id))
     )
       return false;
     if (s.kind === "rift" && !(this.peer?.onlineDisplays?.() > 0)) return false;
-    if ([...expeditionKinds, "race", "beacon"].includes(s.kind))
-      initExpedition(s);
+    if (s.kind === "race") initCircuit(s);
+    if ([...expeditionKinds, "beacon"].includes(s.kind)) initExpedition(s);
     if (s.kind === "museum") s.totalRounds = Math.max(4, s.players.length);
     if (s.kind === "draw") s.totalTurns = Math.max(4, s.players.length);
     if (s.kind === "poem")
@@ -1815,11 +2070,11 @@ export class PartyGames {
       )
       .sort((a, b) => b.createdAt - a.createdAt);
     sheet(
-      `<span class="eyebrow">ВАША ИГРОВАЯ ПАМЯТЬ</span><h2>Не просто цифры</h2><p class="muted">Ваши партии, личные результаты и выставки, которые придумали вместе.</p><div class="game-record-list">${
+      `<span class="eyebrow">ВАША ИГРОВАЯ ПАМЯТЬ</span><h2>Выставки и итоги</h2><p class="muted">Сохранённые рисунки, общие пути и результаты ваших партий. Новые ответы и события находятся отдельно — под колокольчиком.</p><div class="game-record-list">${
         records
           .map(
             (r) =>
-              `<article class="record-history-card"><div><span class="eyebrow">${new Date(r.createdAt).toLocaleDateString("ru-RU")} · ${r.arcadeRecord.players.length} участников</span><h3>${esc(r.title)}</h3><p>${["museum", "frequency", ...expeditionKinds, "race", "beacon"].includes(r.arcadeRecord.kind) ? `${r.arcadeRecord.results?.[this.userId] || 0} ${r.arcadeRecord.kind === "frequency" ? "/100" : "очков"}` : `${(r.arcadeRecord.times?.[this.userId] / 1000 || r.arcadeRecord.seconds).toFixed(1)} с`}</p></div>${
+              `<article class="record-history-card"><div><span class="eyebrow">${new Date(r.createdAt).toLocaleDateString("ru-RU")} · ${r.arcadeRecord.players.length} участников</span><h3>${esc(r.title)}</h3><p>${r.arcadeRecord.rulesVersion === CIRCUIT_VERSION && r.arcadeRecord.kind === "race" ? `${Math.round(r.arcadeRecord.teamScore / r.arcadeRecord.runLength)}% общего света · ${r.arcadeRecord.runLength} испытаний` : ["museum", "frequency", ...expeditionKinds, "race", "beacon"].includes(r.arcadeRecord.kind) ? `${r.arcadeRecord.results?.[this.userId] || 0} ${r.arcadeRecord.kind === "frequency" ? "/100" : "очков"}` : `${(r.arcadeRecord.times?.[this.userId] / 1000 || r.arcadeRecord.seconds).toFixed(1)} с`}</p></div>${
                 r.arcadeRecord.gallery
                   ? `<div class="record-thumbs">${r.arcadeRecord.gallery
                       .slice(0, 3)
@@ -1828,7 +2083,7 @@ export class PartyGames {
                         "",
                       )}</div><button class="btn text" data-party="view-record" data-id="${esc(r.id)}">Открыть выставку</button><button class="btn soft wide" data-party="screen-record" data-id="${esc(r.id)}">Показать на общем экране</button>`
                   : ""
-              }</article>`,
+              }<button class="btn text" data-party="delete-record" data-id="${esc(r.id)}">${icon("trash")} Удалить результат</button></article>`,
           )
           .join("") ||
         '<p class="muted center">Первые результаты появятся после игры. Никаких обязательных рекордов — просто память о времени вместе.</p>'
@@ -1868,6 +2123,65 @@ export class PartyGames {
   }
   async action(action, el) {
     try {
+      if (action === "circuit-home") {
+        this.circuitMenu();
+        return;
+      }
+      if (action === "circuit-start") {
+        this.start("race", {
+          circuit: true,
+          length: Number(el.dataset.length),
+        });
+        return;
+      }
+      if (action === "circuit-resume") {
+        this.openTable("race");
+        return;
+      }
+      if (action === "run-hold") {
+        if (!this.holdStart) {
+          this.holdStart = performance.now();
+          el.textContent = "Отпустить свет";
+        } else {
+          this.input({
+            action: "run-hit",
+            turn: this.frame.public.turn,
+            measure: performance.now() - this.holdStart,
+          });
+          this.holdStart = 0;
+        }
+        return;
+      }
+      if (action === "run-action") {
+        const data = {
+          action: el.dataset.runAction,
+          turn: this.frame.public.turn,
+          value: Number(el.dataset.value),
+        };
+        if (data.action === "run-hit") {
+          const clock = document.querySelector("[data-run-clock]");
+          const elapsed =
+            (Date.now() - Number(clock.dataset.start)) /
+            Number(clock.dataset.period);
+          if (elapsed < 0) {
+            toast("Сейчас загорится свет — приготовьтесь");
+            return;
+          }
+          let measure =
+            clock.dataset.runClock === "rhythm"
+              ? elapsed
+              : (elapsed + Number(clock.dataset.offset || 0)) % 1;
+          if (
+            clock.dataset.runClock === "timing" &&
+            this.frame.public.trial.variant &&
+            this.frame.public.players.findIndex((p) => p.id === this.userId) % 2
+          )
+            measure = 1 - measure;
+          data.measure = measure;
+        }
+        this.input(data);
+        return;
+      }
       if (action === "focus") {
         const expanded = document
           .querySelector("#sheet")
@@ -1956,6 +2270,11 @@ export class PartyGames {
         return;
       }
       if (action === "player-stop") {
+        if (this.audioFrame)
+          this.peer?.sendInput({
+            round: this.audioFrame.round,
+            action: "audio-close",
+          });
         this.audio?.destroy();
         this.audio = null;
         this.audioFrame = null;
@@ -1966,6 +2285,30 @@ export class PartyGames {
 
       if (action === "view-record" || action === "screen-record") {
         this.viewRecord(el.dataset.id, action === "screen-record");
+        return;
+      }
+      if (action === "view-team-record") {
+        const record = this.store.data.plans.find(
+          (r) =>
+            r.id === el.dataset.id &&
+            !r.deletedAt &&
+            r.arcadeRecord?.rulesVersion === CIRCUIT_VERSION,
+        );
+        if (record) {
+          this.opened = false;
+          sheet(circuitRecordView(record, this.store));
+        }
+        return;
+      }
+      if (action === "delete-record") {
+        const record = this.store.data.plans.find(
+          (r) => r.id === el.dataset.id && r.arcadeRecord && !r.deletedAt,
+        );
+        if (record) {
+          await this.store.remove("plans", record.id);
+          this.showRecords();
+          toast("Результат удалён из общей выставки");
+        }
         return;
       }
       if (action === "frequency-next" && this.hosting)
@@ -1996,7 +2339,12 @@ export class PartyGames {
       if (action === "ink-color") this.inkColor = Number(el.dataset.index);
       if (action === "sound") {
         if (this.audio?.started && this.audio.context?.state === "running") {
-          await this.audio.stop();
+          this.peer?.sendInput({
+            round: this.audioFrame.round,
+            action: "audio-pause",
+            paused: true,
+          });
+          await this.audio?.stop();
         } else {
           this.audioFrame ||= this.frame;
           this.audio ||= new NatureSound(this.options.soundSeed());
@@ -2006,6 +2354,11 @@ export class PartyGames {
             this.userId,
             this.audioFrame.kind,
           );
+          this.peer?.sendInput({
+            round: this.audioFrame.round,
+            action: "audio-pause",
+            paused: false,
+          });
         }
         this.player();
         if (!el) return;

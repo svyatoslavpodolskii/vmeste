@@ -199,6 +199,25 @@ export function validRecord(table, r, roomId) {
         r.arcadeRecord.players.some((id) => typeof id !== "string"))
     )
       return false;
+    if (r.arcadeRecord?.kind === "race" && r.arcadeRecord.rulesVersion === 2) {
+      const a = r.arcadeRecord;
+      if (
+        ![8, 16, 24].includes(a.runLength) ||
+        !Number.isFinite(a.teamScore) ||
+        a.teamScore < 0 ||
+        a.teamScore > a.runLength * 100 ||
+        !Array.isArray(a.journal) ||
+        a.journal.length !== a.runLength ||
+        a.journal.some(
+          (j) =>
+            typeof j.id !== "string" ||
+            !Number.isFinite(j.score) ||
+            j.score < 0 ||
+            j.score > 100,
+        )
+      )
+        return false;
+    }
     return (
       typeof r.title === "string" &&
       r.title.length <= 160 &&
