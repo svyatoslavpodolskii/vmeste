@@ -8,7 +8,34 @@ import {
   expeditionPublic,
   expeditionSecret,
 } from "../js/expedition.js";
-import { quad } from "../js/sound-controls.js";
+import {
+  quad,
+  arrangeMeditation,
+  meditationVoices,
+} from "../js/sound-controls.js";
+test("four meditation slots keep their settings when solo control becomes shared", () => {
+  const s = {
+    kind: "meditation",
+    solo: true,
+    players: [{ id: "A" }],
+    contributors: {},
+  };
+  arrangeMeditation(s);
+  s.contributors["A:voice2"].pads[0] = [0.9, 0.1];
+  s.contributors["A:voice3"].memory = [0.2, 0, 0, 0];
+  s.solo = false;
+  s.players.push({ id: "B" });
+  arrangeMeditation(s);
+  const voices = meditationVoices(s);
+  assert.equal(voices.filter((v) => v.owner === "A").length, 2);
+  assert.equal(voices.filter((v) => v.owner === "B").length, 2);
+  assert.deepEqual(s.contributors["A:voice1"].pads[0], [0.9, 0.1]);
+  assert.equal(s.contributors["B:voice1"].memory[0], 0.2);
+  s.players.push({ id: "C" }, { id: "D" });
+  arrangeMeditation(s);
+  assert.deepEqual(s.contributors.C.pads[0], [0.9, 0.1]);
+  assert.equal(new Set(meditationVoices(s).map((v) => v.id)).size, 4);
+});
 const memory = new Map();
 globalThis.localStorage = {
   getItem: (k) => memory.get(k) || null,

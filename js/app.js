@@ -62,6 +62,25 @@ import {
   riddles,
 } from "../data/games.js";
 const app = document.querySelector("#app");
+document.addEventListener("change", (e) => {
+  captureProfileDraft(e);
+  if (!e.target.matches(".inline-avatar-picker input[name=avatar]")) return;
+  const picker = e.target.closest(".inline-avatar-picker");
+  picker.querySelector(".avatar-preview").textContent = e.target.value;
+  picker.querySelector("details").open = false;
+  picker.querySelector("summary").focus();
+});
+function captureProfileDraft(e) {
+  const form = e.target.closest("#profile-form");
+  if (!form || !store) return;
+  const values = Object.fromEntries(new FormData(form));
+  state.profileDraft = {
+    ...values,
+    roomId: store.roomId,
+    userId: store.userId,
+  };
+}
+document.addEventListener("input", captureProfileDraft);
 const params = new URLSearchParams(location.search);
 const identityKey =
   params.get("participant") === "2" ? "vmeste-user-2" : "vmeste-user";
@@ -1442,6 +1461,8 @@ document.addEventListener("submit", async (e) => {
           displayName: fields.name.trim(),
           avatar: fields.avatar,
         });
+        state.profileDraft = null;
+        if (form.id === "profile-form") render();
         if (form.id === "profile-edit-form") closeSheet();
         toast("Сохранено");
         break;

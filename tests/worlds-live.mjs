@@ -94,10 +94,10 @@ try {
   await open(a, "meditation");
   await a.locator('[data-party="solo"]').click();
   await a.locator('[data-party="sound"]').click();
-  assert.equal(await a.locator(".voice-tabs button").count(), 4);
-  await a.locator('[data-party="voice"][data-index="2"]').click();
-  await a.locator('[data-sound-pad="0"]').focus();
-  await a.locator('[data-sound-pad="0"]').press("ArrowLeft");
+  assert.equal(await a.locator(".voice-tabs button").count(), 0);
+  assert.equal(await a.locator(".meditation-point:not([disabled])").count(), 4);
+  await a.locator('[data-point-slot="2"]').focus();
+  await a.locator('[data-point-slot="2"]').press("ArrowLeft");
   await close(a);
   await open(b, "questions");
   await m.waitForFunction(() => window.testFrame?.kind === "questions");
@@ -117,10 +117,15 @@ try {
   );
   await close(b);
   await open(b, "meditation");
-  await b.locator('[data-sound-pad="0"]').waitFor();
+  await b.locator(".meditation-point:not([disabled])").first().waitFor();
   await b.locator('[data-party="sound"]').click();
-  await b.locator('[data-sound-pad="0"]').focus();
-  await b.locator('[data-sound-pad="0"]').press("ArrowRight");
+  await b.locator(".meditation-point:not([disabled])").first().focus();
+  await b
+    .locator(".meditation-point:not([disabled])")
+    .first()
+    .press("ArrowRight");
+  assert.equal(await b.locator(".meditation-point:not([disabled])").count(), 2);
+  assert.equal(await b.locator(".meditation-point[disabled]").count(), 2);
   assert.equal(await b.locator(".voice-tabs").count(), 0);
   await a.locator('#ambient-player [data-party="player-open"]').click();
   await a.waitForFunction(() => !document.querySelector(".voice-tabs"));
@@ -138,6 +143,12 @@ try {
   console.log(
     "PASS constellation retains a persistent subtle memory after release",
   );
+  await a.locator('[data-party="focus"]').click();
+  const expanded = await a.locator("#sheet").boundingBox();
+  assert.ok(expanded.width >= 389 && expanded.height >= 843);
+  assert.equal(await a.locator(".plane-labels span").count(), 4);
+  await a.screenshot({ path: "test-results/meditation-fullscreen.png" });
+  await a.locator('[data-party="focus"]').click();
   await close(a);
   await close(b);
   await ac.setOffline(true);
@@ -224,6 +235,23 @@ try {
   await a.screenshot({ path: "test-results/letters-v4.png" });
   await close(a);
   await nav(a, "profile");
+  assert.equal(await a.locator('[data-action="edit-profile"]').count(), 0);
+  await a.locator(".inline-avatar-picker summary").click();
+  const chosen = await a
+    .locator(".inline-avatar-picker input")
+    .nth(1)
+    .inputValue();
+  await a.locator(".inline-avatar-picker label").nth(1).click();
+  assert.equal(
+    await a.locator(".inline-avatar-picker .avatar-preview").textContent(),
+    chosen,
+  );
+  await a.locator('#profile-form button[type="submit"]').click();
+  await a.waitForFunction(
+    (chosen) =>
+      document.querySelector(".avatars")?.textContent.includes(chosen),
+    chosen,
+  );
   assert.equal(await a.locator(".settings-actions").count(), 0);
   await a.locator('[data-action="room-menu"]').click();
   await a.locator(".current-room").waitFor();

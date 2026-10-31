@@ -114,6 +114,22 @@ try {
     );
     await sleep(700);
     const partnerLayer = sound.nodes[1].gain.gain.value;
+    const star = { index: 2, power: 0.55, until: Date.now() + 4000 };
+    const field = { me: { pads: [[0.5, 0.5]], stars: [star] } };
+    sound.apply(field, "me", "meditation");
+    await sleep(240);
+    const starGain = sound.starVoices.get("me:2").gain.gain.value;
+    const starQ = sound.nodes[0].filter.Q.value;
+    const starNode = sound.starVoices.get("me:2");
+    for (let i = 0; i < 30; i++) {
+      star.power = 1;
+      star.until = Date.now() + 4000;
+      sound.apply(field, "me", "meditation");
+    }
+    await sleep(220);
+    const heldGain = starNode.gain.gain.value;
+    const boundedStarVoices = sound.starVoices.size;
+    const sameStarVoice = sound.starVoices.get("me:2") === starNode;
     sound.destroy();
     // Boundary follows the original tail's adjacent samples, rather than jumping
     // back to the beginning of an unrelated random buffer.
@@ -126,6 +142,11 @@ try {
       highCutoff,
       quietLayer,
       partnerLayer,
+      starGain,
+      heldGain,
+      starQ,
+      boundedStarVoices,
+      sameStarVoice,
       firstEnergy,
       resumedEnergy,
       resumedGain,
@@ -152,6 +173,11 @@ try {
   assert.equal(result.stopped, "suspended");
   assert.equal(result.fastRestart, "running");
   assert.equal(result.contextReused, true);
+  assert.ok(result.starGain > 0.08, JSON.stringify(result));
+  assert.ok(result.heldGain > result.starGain * 1.2, JSON.stringify(result));
+  assert.ok(result.starQ > 2.3, JSON.stringify(result));
+  assert.equal(result.boundedStarVoices, 1);
+  assert.equal(result.sameStarVoice, true);
   assert.ok(result.ownPad > 0 && result.otherPad > 0);
   assert.ok(
     result.harmonic.every(

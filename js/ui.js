@@ -8,6 +8,7 @@ export const esc = (v) =>
       ],
   );
 const paths = {
+  expand: "M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5",
   letter: "M3 5h18v14H3V5Zm0 0 9 8 9-8",
   bell: "M4 17h16l-2-4V8a6 6 0 0 0-12 0v5l-2 4Zm6 4h4",
   plant: "M12 22V9M12 14Q2 15 3 5q9-1 9 9Zm0-3q10 1 9-9-9 0-9 9Z",
@@ -149,9 +150,9 @@ export function affinity(store, idea) {
   };
 }
 
-export function avatarPicker(current = "🌷") {
+export function avatarPicker(current = "🌷", inline = false) {
   const list = [...new Set([current, ...avatars])];
-  return `<fieldset class="avatar-picker"><legend>Ваш значок</legend><details><summary><span class="avatar-preview">${esc(current)}</span> Выбрать персонажа или символ</summary><div class="emoji-gallery">${list.map((a) => `<label title="${esc(a)}"><input type="radio" name="avatar" value="${esc(a)}" ${current === a ? "checked" : ""}><span>${a}</span></label>`).join("")}</div></details></fieldset>`;
+  return `<fieldset class="avatar-picker ${inline ? "inline-avatar-picker" : ""}"><legend>${inline ? "Значок рядом с именем" : "Ваш значок"}</legend><details><summary aria-label="Изменить значок"><span class="avatar-preview">${esc(current)}</span>${inline ? "" : " Выбрать персонажа или символ"}</summary><div class="emoji-gallery">${list.map((a) => `<label title="${esc(a)}"><input type="radio" name="avatar" value="${esc(a)}" ${current === a ? "checked" : ""}><span>${a}</span></label>`).join("")}</div></details></fieldset>`;
 }
 export function visualPicker(idea = {}) {
   const image = idea.image || "./assets/magic.svg",

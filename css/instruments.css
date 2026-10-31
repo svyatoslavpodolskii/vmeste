@@ -221,15 +221,15 @@
   isolation: isolate;
 }
 .panel-canopy .xy-pad {
-  border-radius: 50% 30% 45% 35%;
+  border-radius: 24px;
   background: radial-gradient(at 20% 80%, #47664c, transparent), #22233b;
 }
 .panel-orbit .xy-pad {
-  border-radius: 50%;
+  border-radius: 24px;
   background: radial-gradient(at 75% 25%, #59466a, transparent), #1a233c;
 }
 .panel-spark .xy-pad {
-  border-radius: 24px 70px 24px 70px;
+  border-radius: 24px;
   background: radial-gradient(at 70% 70%, #8a5368, transparent), #2b2636;
 }
 .pad-grid {
@@ -283,7 +283,7 @@
 }
 .mix-cursor {
   position: absolute;
-  inset: 0;
+  inset: 16px;
   pointer-events: none;
   transition: transform 120ms var(--ease);
   z-index: 2;

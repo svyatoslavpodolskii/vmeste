@@ -30,6 +30,8 @@ import {
   deckTitle,
 } from "./deck-session.js";
 import {
+  arrangeMeditation,
+  meditationVoices,
   soundControls,
   bindSoundControls,
   soundWorld,
@@ -309,6 +311,7 @@ export class PartyGames {
     });
     document.querySelector("#sheet").addEventListener("close", () => {
       this.opened = false;
+      document.querySelector("#sheet").classList.remove("game-expanded");
       if (
         this.frame &&
         !["soundgarden", "meditation"].includes(this.frame.kind)
@@ -494,6 +497,7 @@ export class PartyGames {
           { layers: [1, 1, 1, 0, 0, 0, 0, 0], moods: [0.55, 0.3, 0.6, 0.7] },
         ]),
       );
+    if (kind === "meditation") arrangeMeditation(s);
     if ([...expeditionKinds, "race", "beacon"].includes(kind))
       initExpedition(s);
     this.broadcast();
@@ -957,14 +961,16 @@ export class PartyGames {
       if (!s.joined.includes(sender)) s.joined.push(sender);
       if (s.contributors && sender !== this.userId && s.solo) {
         s.solo = false;
-        for (const id of Object.keys(s.contributors))
-          if (id.includes(":voice")) delete s.contributors[id];
+        if (s.kind !== "meditation")
+          for (const id of Object.keys(s.contributors))
+            if (id.includes(":voice")) delete s.contributors[id];
       }
       if (s.contributors && !s.contributors[sender])
         s.contributors[sender] = {
           layers: [1, 1, 1, 0, 0, 0, 0, 0],
           moods: [0.55, 0.3, 0.6, 0.7],
         };
+      if (s.kind === "meditation") arrangeMeditation(s);
       this.broadcast();
       if (s.stage === "running") this.privateInstructions();
       return;
@@ -1199,10 +1205,16 @@ export class PartyGames {
     }
     if (["meditation", "soundgarden"].includes(s.kind)) {
       const voice =
-        s.solo && [1, 2, 3].includes(Number(input.voice))
+        (s.solo || s.kind === "meditation") &&
+        [1, 2, 3].includes(Number(input.voice))
           ? Number(input.voice)
           : 0;
       const voiceId = voice ? sender + ":voice" + voice : sender;
+      if (
+        s.kind === "meditation" &&
+        !meditationVoices(s).some((v) => v.id === voiceId && v.owner === sender)
+      )
+        return;
       const c = s.contributors[voiceId];
       if (!c) return;
       const index = Number(input.index);
@@ -1244,7 +1256,7 @@ export class PartyGames {
         c.memory ||= [0, 0, 0, 0];
         c.memory[index] = Math.min(
           1,
-          c.memory[index] * 0.99 + clamp(input.power) * 0.07,
+          c.memory[index] * 0.99 + clamp(input.power) * 0.12,
         );
         c.memoryAt = Date.now();
       }
@@ -1470,7 +1482,7 @@ export class PartyGames {
       f.public.progressBy?.[this.userId];
     if (force || document.querySelector("#party-panel")?.dataset.key !== key) {
       sheet(
-        `<div id="party-panel" data-key="${esc(key)}"><div id="party-live"></div><div id="party-controls"></div></div>`,
+        `<div id="party-panel" data-key="${esc(key)}"><div class="game-toolbar"><button class="btn text" data-party="focus">${icon("expand")} ${document.querySelector("#sheet").classList.contains("game-expanded") ? "Обычный вид" : "На весь экран"}</button></div><div id="party-live"></div><div id="party-controls"></div></div>`,
       );
       this.opened = true;
       this.controls();
@@ -1483,7 +1495,25 @@ export class PartyGames {
     this.updateLobby();
     if (["draw", "museum"].includes(f.kind)) this.paint();
     if (["meditation", "soundgarden"].includes(f.kind)) {
-      const mine = f.public.contributors?.[this.userId];
+      const mine =
+        f.public.contributors?.[
+          this.voice && (f.kind === "meditation" || f.public.solo)
+            ? this.userId + ":voice" + this.voice
+            : this.userId
+        ];
+      for (const point of document.querySelectorAll(
+        "[data-meditation-point]",
+      )) {
+        const voice = Number(point.dataset.meditationPoint);
+        const id = point.dataset.owner + (voice ? ":voice" + voice : "");
+        const p = f.public.contributors?.[id]?.pads?.[0];
+        if (p && !point.classList.contains("dragging-point")) {
+          point.style.left = `${10 + p[0] * 80}%`;
+          point.style.top = `${10 + p[1] * 80}%`;
+          point.dataset.x = p[0];
+          point.dataset.y = p[1];
+        }
+      }
       for (const b of document.querySelectorAll('[data-party="layer"]'))
         b.setAttribute(
           "aria-pressed",
@@ -1582,6 +1612,13 @@ export class PartyGames {
           ? `<div class="private-instructions"><small>Только вы видите задание</small><h3>${esc(secret.word || "Получаем карточку…")}</h3></div><canvas id="draw-pad" width="1000" height="700" aria-label="Рисовать подсказку"></canvas><div class="ink-colors">${["Лаванда", "Роза", "Мята", "Мёд"].map((c, i) => `<button data-party="ink-color" data-index="${i}" style="--ink:${["#6b527f", "#ed7798", "#5c9b8a", "#ce9b4b"][i]}">${c}</button>`).join("")}</div>`
           : `<p class="game-instruction">Угадывайте вслух. Когда ответ найден, нажмите кнопку.</p><button class="btn primary wide" data-party="draw-solved">Угадали!</button>`;
     else if (["meditation", "soundgarden"].includes(f.kind)) {
+      if (
+        f.kind === "meditation" &&
+        !meditationVoices(f.public).some(
+          (v) => v.owner === this.userId && v.voice === (this.voice || 0),
+        )
+      )
+        this.voice = 0;
       html = soundControls(f, this.userId, this.audio, this.voice || 0);
     }
 
@@ -1831,6 +1868,14 @@ export class PartyGames {
   }
   async action(action, el) {
     try {
+      if (action === "focus") {
+        const expanded = document
+          .querySelector("#sheet")
+          .classList.toggle("game-expanded");
+        el.textContent = expanded ? "Обычный вид" : "На весь экран";
+        el.setAttribute("aria-pressed", String(expanded));
+        return;
+      }
       if (action === "voice") {
         this.voice = Number(el.dataset.index) || 0;
         this.controls();
@@ -1847,15 +1892,17 @@ export class PartyGames {
         );
         this.state.joined = [this.userId];
         this.state.readyPlayers = [this.userId];
-        for (let i = 1; i < 4; i++)
-          this.state.contributors[this.userId + ":voice" + i] = {
-            layers: [1, 1, 1, 0, 0, 0, 0, 0],
-            moods: [0.55, 0.3, 0.6, 0.7],
-            pads: [
-              [0.25 + i * 0.12, 0.35 + i * 0.1],
-              [0.45, 0.65],
-            ],
-          };
+        if (this.state.kind === "meditation") arrangeMeditation(this.state);
+        else
+          for (let i = 1; i < 4; i++)
+            this.state.contributors[this.userId + ":voice" + i] = {
+              layers: [1, 1, 1, 0, 0, 0, 0, 0],
+              moods: [0.55, 0.3, 0.6, 0.7],
+              pads: [
+                [0.25 + i * 0.12, 0.35 + i * 0.1],
+                [0.45, 0.65],
+              ],
+            };
         this.beginIfReady();
         this.broadcast();
         return;

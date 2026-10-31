@@ -233,22 +233,54 @@ export class NatureSound {
     const others = entries.filter(([id]) => id !== ownId);
     const remote = others.map(([, c]) => quad(...(c.pads?.[0] || [0.5, 0.5])));
     const remoteTone = others.map(([, c]) => c.pads?.[1] || [0.5, 0.5]);
-    const memory = (own.memory || [0, 0, 0, 0]).map(
-      (n) =>
-        n *
-        Math.exp(
-          -Math.max(0, Date.now() - (own.memoryAt || Date.now())) / 900000,
+    const memory = [0, 1, 2, 3].map(
+      (index) =>
+        entries.reduce(
+          (sum, [, c]) =>
+            sum +
+            (c.memory?.[index] || 0) *
+              Math.exp(
+                -Math.max(0, Date.now() - (c.memoryAt || Date.now())) / 900000,
+              ),
+          0,
+        ) / Math.max(1, entries.length),
+    );
+    const gesture = [0, 1, 2, 3].map((index) =>
+      Math.min(
+        1,
+        entries.reduce(
+          (sum, [, c]) =>
+            sum +
+            (c.stars || [])
+              .filter((s) => s.index === index && s.until > Date.now())
+              .reduce(
+                (n, s) =>
+                  n + s.power * Math.min(1, (s.until - Date.now()) / 1200),
+                0,
+              ),
+          0,
         ),
+      ),
     );
     const season = (Math.sin(t / (9 + role * 3)) + 1) / 2,
       event = (Math.sin(t / (17 + role * 2)) + 1) / 2;
     for (let i = 0; i < 8; i++) {
       const node = this.nodes[i],
         index = (i + role) % 4;
+      const voice =
+        mode === "meditation"
+          ? entries.find(([, c]) => c.slot === i % 4)?.[1]
+          : null;
+      const nodePoint = voice?.pads?.[0] || point;
+      const nodeTone = voice ? [nodePoint[0], nodePoint[1]] : tone;
       const partner =
         remote.reduce((sum, w, n) => sum + w[(index + 2 + n) % 4], 0) /
         Math.max(1, remote.length);
-      const localWeight = i < 4 ? local[index] : harmony[index];
+      const localWeight = voice
+        ? quad(...nodePoint)[index]
+        : i < 4
+          ? local[index]
+          : harmony[index];
       const layer =
         mode === "meditation" ? 0.13 + localWeight * 0.5 : localWeight * 0.9;
       const ebb =
@@ -262,26 +294,35 @@ export class NatureSound {
         responsive ? 0.16 : 1.2,
       );
       const openness =
-        point[0] * 0.6 +
-        (1 - point[1]) * 0.4 +
+        nodePoint[0] * 0.6 +
+        (1 - nodePoint[1]) * 0.4 +
         memory[0] * 0.16 -
-        memory[3] * 0.12;
+        memory[3] * 0.12 +
+        gesture[0] * 0.35 -
+        gesture[1] * 0.22;
       node.filter.frequency.setTargetAtTime(
         node.base * Math.pow(2, (openness - 0.5) * 3.8) * (1 + season * 0.5),
         t,
         responsive ? 0.18 : 2,
       );
-      node.filter.Q.setTargetAtTime(0.4 + tone[1] * 2.6, t, 0.35);
+      node.filter.Q.setTargetAtTime(
+        0.4 + nodeTone[1] * 2.6 + gesture[2] * 2,
+        t,
+        0.12,
+      );
       node.source.playbackRate.setTargetAtTime(
         i >= 5
           ? [1, 1.5, 0.75, 1.125][(i + role) % 4] *
-              (0.985 + tone[0] * 0.03 + memory[1] * 0.025)
-          : 0.25 + point[0] * 1.1 + partner * 0.4,
+              (0.985 +
+                nodeTone[0] * 0.03 +
+                memory[1] * 0.025 +
+                gesture[3] * 0.04)
+          : 0.25 + nodePoint[0] * 1.1 + partner * 0.4,
         t,
         0.5,
       );
       node.variant.playbackRate.setTargetAtTime(
-        i >= 5 ? [1.5, 2, 0.5][(i + role) % 3] : 0.35 + tone[1] * 0.9,
+        i >= 5 ? [1.5, 2, 0.5][(i + role) % 3] : 0.35 + nodeTone[1] * 0.9,
         t,
         2,
       );
@@ -289,7 +330,10 @@ export class NatureSound {
         0,
         Math.min(
           1,
-          event * (0.25 + tone[0] * 0.7) + partner * 0.22 + memory[2] * 0.16,
+          event * (0.25 + nodeTone[0] * 0.7) +
+            partner * 0.22 +
+            memory[2] * 0.16 +
+            gesture[1] * 0.35,
         ),
       );
       node.primary.gain.setTargetAtTime(
@@ -304,14 +348,18 @@ export class NatureSound {
       );
       node.lfo.frequency.setTargetAtTime(
         i === 4
-          ? 2 + point[1] * 10
-          : 0.015 + point[1] * 0.55 + (i % 3) * 0.03 + memory[2] * 0.09,
+          ? 2 + nodePoint[1] * 10 + gesture[2] * 5
+          : 0.015 +
+              nodePoint[1] * 0.55 +
+              (i % 3) * 0.03 +
+              memory[2] * 0.09 +
+              gesture[2] * 1.5,
         t,
         responsive ? 0.2 : 2,
       );
-      node.depth.gain.setTargetAtTime(0.08 + tone[1] * 0.55, t, 0.4);
+      node.depth.gain.setTargetAtTime(0.08 + nodeTone[1] * 0.55, t, 0.2);
       node.pan.pan.setTargetAtTime(
-        Math.sin(t / (5 + i) + i) * (0.15 + tone[0] * 0.75),
+        Math.sin(t / (5 + i) + i) * (0.15 + nodeTone[0] * 0.75),
         t,
         0.6,
       );
@@ -319,44 +367,73 @@ export class NatureSound {
     const sharedSpace =
       remoteTone.reduce((n, p) => n + p[1], 0) / Math.max(1, remoteTone.length);
     this.wet.gain.setTargetAtTime(
-      0.08 + tone[1] * 0.55 + sharedSpace * 0.2 + memory[3] * 0.12,
+      0.08 +
+        tone[1] * 0.55 +
+        sharedSpace * 0.2 +
+        memory[3] * 0.12 +
+        gesture[1] * 0.25,
       t,
       0.5,
     );
-    // Constellations are transient gestures; they never accumulate without bound.
-    this.starSeen ||= new Map();
+    // One sustained voice per constellation: holding updates its envelope instead of stacking oscillators.
     for (const [id, c] of entries)
       for (const star of c.stars || []) {
-        const key = id + ":" + star.index,
-          previous = this.starSeen.get(key) || 0;
-        if (star.until > Date.now() && star.until > previous + 300) {
-          this.starSeen.set(key, star.until);
-          this.spark(star, role);
-        }
+        const key = id + ":" + star.index;
+        if (star.until > Date.now()) this.spark(star, role, key);
       }
   }
-  spark(star, role) {
+  spark(star, role, key) {
     const ctx = this.context,
       t = ctx.currentTime,
-      remaining = Math.max(0.2, Math.min(12, (star.until - Date.now()) / 1000)),
-      osc = ctx.createOscillator(),
+      remaining = Math.max(0.2, Math.min(18, (star.until - Date.now()) / 1000));
+    this.starVoices ||= new Map();
+    const active = this.starVoices.get(key);
+    if (active) {
+      active.gain.gain.cancelScheduledValues(t);
+      active.gain.gain.setTargetAtTime(0.055 + star.power * 0.13, t, 0.06);
+      active.gain.gain.setTargetAtTime(
+        0.0001,
+        t + Math.min(0.4, remaining * 0.2),
+        Math.max(0.15, remaining / 4),
+      );
+      active.filter.frequency.setTargetAtTime(800 + star.power * 5000, t, 0.1);
+      active.osc.stop(t + remaining + 0.1);
+      active.harmonic.stop(t + remaining + 0.1);
+      return;
+    }
+    const osc = ctx.createOscillator(),
+      harmonic = ctx.createOscillator(),
       gain = ctx.createGain(),
       filter = ctx.createBiquadFilter();
     osc.type = star.index % 2 ? "sine" : "triangle";
-    osc.frequency.value = [110, 165, 220, 330][(star.index + role) % 4];
+    osc.frequency.value = [220, 330, 440, 660][(star.index + role) % 4];
     osc.frequency.exponentialRampToValueAtTime(
       osc.frequency.value * (star.index === 2 ? 1.5 : 1.003),
       t + remaining,
     );
     filter.type = "lowpass";
-    filter.frequency.value = 400 + star.power * 3200;
+    filter.frequency.value = 800 + star.power * 5000;
     gain.gain.setValueAtTime(0.0001, t);
-    gain.gain.exponentialRampToValueAtTime(0.015 + star.power * 0.045, t + 0.1);
+    gain.gain.exponentialRampToValueAtTime(0.055 + star.power * 0.13, t + 0.06);
     gain.gain.exponentialRampToValueAtTime(0.0001, t + remaining);
+    harmonic.type = "sine";
+    harmonic.frequency.value =
+      osc.frequency.value * [1.5, 1.003, 2, 1.25][star.index];
+    const harmonicGain = ctx.createGain();
+    harmonicGain.gain.value = 0.28;
+    harmonic.connect(harmonicGain).connect(filter);
     osc.connect(filter).connect(gain).connect(this.reverb);
     gain.connect(this.master);
     osc.start(t);
+    harmonic.start(t);
     osc.stop(t + remaining + 0.1);
+    harmonic.stop(t + remaining + 0.1);
+    const entry = { osc, harmonic, gain, filter, harmonicGain };
+    this.starVoices.set(key, entry);
+    osc.onended = () => {
+      for (const node of Object.values(entry)) node.disconnect();
+      if (this.starVoices?.get(key) === entry) this.starVoices.delete(key);
+    };
   }
 
   volume(value) {
@@ -383,5 +460,6 @@ export class NatureSound {
     this.context?.close();
     this.context = null;
     this.nodes = [];
+    this.starVoices?.clear();
   }
 }

@@ -12,6 +12,64 @@ const roles = [
   ["Орбита", "Дальний свет и медленные гармонии", "orbit"],
   ["Искра", "Зернистые текстуры и мягкое эхо", "spark"],
 ];
+export function meditationVoices(state) {
+  const players = state.solo
+    ? state.players.slice(0, 1)
+    : state.players.slice(0, 4);
+  if (!players.length) return [];
+  return roles.map((r, index) => {
+    const owner = players[index % players.length];
+    const voice = Math.floor(index / players.length);
+    return {
+      index,
+      owner: owner.id,
+      name: r[0],
+      voice,
+      id: owner.id + (voice ? ":voice" + voice : ""),
+      theme: r[2],
+    };
+  });
+}
+export function arrangeMeditation(state) {
+  if (state.kind !== "meditation") return;
+  const previous = Object.values(state.contributors || {});
+  state.contributors = Object.fromEntries(
+    meditationVoices(state).map((v) => [
+      v.id,
+      {
+        layers: [1, 1, 1, 0, 0, 0, 0, 0],
+        moods: [0.55, 0.3, 0.6, 0.7],
+        pads: [
+          [0.25 + (v.index % 2) * 0.5, 0.25 + Math.floor(v.index / 2) * 0.5],
+          [0.45, 0.65],
+        ],
+        ...(previous.find((c) => c.slot === v.index) ||
+          previous[v.index] ||
+          {}),
+        slot: v.index,
+      },
+    ]),
+  );
+}
+function meditationPlane(f, user) {
+  return `<section class="meditation-mixer"><header><span class="eyebrow">ЧЕТЫРЕ ГОЛОСА · ОДНО НЕБО</span><h3>Характер музыки</h3></header><p>Двигайте свои огни. Каждый меняет свою гармонику; чужие огни видны рядом.</p><div class="plane-labels"><span>Прозрачно</span><span>Тепло</span></div><div class="meditation-plane" aria-label="Общая плоскость четырёх голосов"><div class="pad-grid" aria-hidden="true"><i></i><i></i></div>${meditationVoices(
+    { ...f.public, kind: f.kind },
+  )
+    .map((v) => {
+      const point = f.public.contributors?.[v.id]?.pads?.[0] || [0.5, 0.5];
+      return `<button class="meditation-point point-${v.index} ${v.owner === user ? "own-point" : "remote-point"}" data-meditation-point="${v.voice}" data-point-slot="${v.index}" data-owner="${esc(v.owner)}" data-x="${point[0]}" data-y="${point[1]}" style="left:${10 + point[0] * 80}%;top:${10 + point[1] * 80}%" aria-label="${v.name}: ${v.owner === user ? "ваш голос, двигайте стрелками или касанием" : "голос другого участника"}" ${v.owner === user ? "" : "disabled"}><i></i><span>${v.name}</span></button>`;
+    })
+    .join(
+      "",
+    )}</div><div class="plane-labels"><span>Текуче</span><span>Глубоко</span></div><div class="plane-legend">${meditationVoices(
+    f.public,
+  )
+    .map(
+      (v) =>
+        `<span class="legend-${v.index}"><i></i>${v.name} · ${v.owner === user ? "вы" : esc(f.public.players.find((p) => p.id === v.owner)?.name || "ваш человек")}</span>`,
+    )
+    .join("")}</div></section>`;
+}
 export function soundRole(f, user) {
   return (f.public.players.findIndex((u) => u.id === user) + 4) % 4;
 }
@@ -22,11 +80,13 @@ function pad(bank, title, corners, point, theme) {
 export function soundControls(f, user, audio, voice = 0) {
   const mine =
       f.public.contributors?.[
-        f.public.solo && voice ? user + ":voice" + voice : user
+        (f.public.solo || f.kind === "meditation") && voice
+          ? user + ":voice" + voice
+          : user
       ] || {},
     role = f.public.solo ? voice : soundRole(f, user),
     r = roles[role];
-  return `<div class="instrument instrument-${r[2]}">${f.public.solo ? `<div class="voice-tabs" aria-label="Четыре одиночных пульта">${roles.map((r, i) => `<button data-party="voice" data-index="${i}" aria-pressed="${i === voice}">${r[0]}</button>`).join("")}</div>` : ``}<header class="instrument-title"><span class="instrument-sigil">${["◒", "⌁", "◉", "✧"][role]}</span><div><span class="eyebrow">ВАШ ПУЛЬТ / ${role + 1}</span><h3>${r[0]}</h3><p>${r[1]}</p></div></header><button class="btn primary wide" data-party="sound">${icon(audio?.started ? "pause" : "play")} ${audio?.started ? "Пауза" : "Включить звук здесь"}</button>${f.kind === "soundgarden" ? pad(0, "Живой ландшафт", role % 2 ? ["Листва", "Дождь", "Ночь", "Ветер"] : ["Берег", "Роса", "Ветер", "Лес"], mine.pads?.[0], r[2]) + pad(1, "Гармонический сад", role % 2 ? ["Хрусталь", "Туман", "Космос", "Тепло"] : ["Свет", "Земля", "Воздух", "Янтарь"], mine.pads?.[1] || [0.45, 0.65], r[2]) : pad(0, "Как дышит ваш космос", ["Прозрачно", "Тепло", "Текуче", "Глубоко"], mine.pads?.[0], r[2]) + `<section class="constellation-field"><span class="eyebrow">ЗАЖГИТЕ СОЗВЕЗДИЕ</span><p>Удерживайте: ярче свет, сильнее отклик, дольше послезвучие.</p><div class="constellations">${["Комета", "Туманность", "Пульсар", "Аврора"].map((n, i) => `<button data-constellation="${i}" class="constellation constellation-${(i + role) % 4}" aria-label="Удерживать: ${n}"><svg viewBox="0 0 100 90" aria-hidden="true"><path d="${["M15 60 40 20 60 66 88 30", "M10 30 40 65 58 16 90 55", "M20 15 80 30 40 70 20 15 85 75", "M10 66 30 20 70 15 90 55 50 78 30 20"][(i + role) % 4]}"/><circle cx="40" cy="20" r="3"/><circle cx="60" cy="66" r="4"/><circle cx="88" cy="30" r="3"/></svg><span>${n}</span><i></i></button>`).join("")}</div></section>`}<div class="sound-volume"><label>Громкость здесь<input type="range" data-sound-volume min="0" max="1" step=".01" value="${audio?.level ?? 0.55}"></label><p>Ваши пульты различаются. Каждый меняет свою часть общего звучания.</p></div></div>`;
+  return `<div class="instrument instrument-${r[2]}">${f.public.solo && f.kind !== "meditation" ? `<div class="voice-tabs" aria-label="Четыре одиночных пульта">${roles.map((r, i) => `<button data-party="voice" data-index="${i}" aria-pressed="${i === voice}">${r[0]}</button>`).join("")}</div>` : ``}<header class="instrument-title"><span class="instrument-sigil">${["◒", "⌁", "◉", "✧"][role]}</span><div><span class="eyebrow">ВАШ ПУЛЬТ / ${role + 1}</span><h3>${f.kind === "meditation" ? "Общее небо" : r[0]}</h3><p>${f.kind === "meditation" ? "Ваши голоса на одной плоскости" : r[1]}</p></div></header><button class="btn primary wide" data-party="sound">${icon(audio?.started ? "pause" : "play")} ${audio?.started ? "Пауза" : "Включить звук здесь"}</button>${f.kind === "soundgarden" ? pad(0, "Живой ландшафт", role % 2 ? ["Листва", "Дождь", "Ночь", "Ветер"] : ["Берег", "Роса", "Ветер", "Лес"], mine.pads?.[0], r[2]) + pad(1, "Гармонический сад", role % 2 ? ["Хрусталь", "Туман", "Космос", "Тепло"] : ["Свет", "Земля", "Воздух", "Янтарь"], mine.pads?.[1] || [0.45, 0.65], r[2]) : meditationPlane(f, user) + `<section class="constellation-field"><span class="eyebrow">ЗАЖГИТЕ СОЗВЕЗДИЕ</span><p>Удерживайте: ярче свет, сильнее отклик, дольше послезвучие.</p><div class="constellations">${["Комета", "Туманность", "Пульсар", "Аврора"].map((n, i) => `<button data-constellation="${i}" class="constellation constellation-${(i + role) % 4}" aria-label="Удерживать: ${n}"><svg viewBox="0 0 100 90" aria-hidden="true"><path d="${["M15 60 40 20 60 66 88 30", "M10 30 40 65 58 16 90 55", "M20 15 80 30 40 70 20 15 85 75", "M10 66 30 20 70 15 90 55 50 78 30 20"][(i + role) % 4]}"/><circle cx="40" cy="20" r="3"/><circle cx="60" cy="66" r="4"/><circle cx="88" cy="30" r="3"/></svg><span>${n}</span><i></i></button>`).join("")}</div></section>`}<div class="sound-volume"><label>Громкость здесь<input type="range" data-sound-volume min="0" max="1" step=".01" value="${audio?.level ?? 0.55}"></label><p>Ваши пульты различаются. Каждый меняет свою часть общего звучания.</p></div></div>`;
 }
 export function soundWorld(f) {
   const cs = Object.values(f.public.contributors || {}),
@@ -37,6 +97,69 @@ export function soundWorld(f) {
 export function bindSoundControls(party) {
   for (const stop of party.soundCleanup || []) stop();
   party.soundCleanup = [];
+  for (const point of document.querySelectorAll(
+    "[data-meditation-point]:not([disabled])",
+  )) {
+    let pointer = null;
+    let last = 0;
+    const select = () => {
+      party.voice = Number(point.dataset.meditationPoint);
+      for (const p of document.querySelectorAll("[data-meditation-point]"))
+        p.classList.toggle("selected-point", p === point);
+    };
+    const update = (x, y, send = true) => {
+      x = clamp(x);
+      y = clamp(y);
+      point.dataset.x = x;
+      point.dataset.y = y;
+      point.style.left = `${10 + x * 80}%`;
+      point.style.top = `${10 + y * 80}%`;
+      if (send)
+        party.input({
+          action: "sound-pad",
+          voice: Number(point.dataset.meditationPoint),
+          bank: 0,
+          x,
+          y,
+        });
+    };
+    const move = (e, force = false) => {
+      if (pointer !== e.pointerId) return;
+      const rect = point.parentElement.getBoundingClientRect();
+      const send = force || performance.now() - last > 70;
+      if (send) last = performance.now();
+      update(
+        ((e.clientX - rect.left) / rect.width - 0.1) / 0.8,
+        ((e.clientY - rect.top) / rect.height - 0.1) / 0.8,
+        send,
+      );
+    };
+    point.onpointerdown = (e) => {
+      select();
+      pointer = e.pointerId;
+      point.setPointerCapture(pointer);
+      point.classList.add("dragging-point");
+    };
+    point.onpointermove = move;
+    point.onpointerup = point.onpointercancel = (e) => {
+      move(e, true);
+      pointer = null;
+      point.classList.remove("dragging-point");
+    };
+    point.onfocus = select;
+    point.onkeydown = (e) => {
+      if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key))
+        return;
+      e.preventDefault();
+      select();
+      update(
+        Number(point.dataset.x) +
+          (e.key === "ArrowLeft" ? -0.05 : e.key === "ArrowRight" ? 0.05 : 0),
+        Number(point.dataset.y) +
+          (e.key === "ArrowUp" ? -0.05 : e.key === "ArrowDown" ? 0.05 : 0),
+      );
+    };
+  }
   for (const pad of document.querySelectorAll("[data-sound-pad]")) {
     let active = false,
       last = 0;
@@ -67,8 +190,8 @@ export function bindSoundControls(party) {
       const send = performance.now() - last > 70;
       if (send) last = performance.now();
       update(
-        (e.clientX - r.left) / r.width,
-        (e.clientY - r.top) / r.height,
+        (e.clientX - r.left - 16) / (r.width - 32),
+        (e.clientY - r.top - 16) / (r.height - 32),
         send,
       );
     };
@@ -112,9 +235,9 @@ export function bindSoundControls(party) {
         action: "star",
         voice: party.voice || 0,
         index: Number(star.dataset.constellation),
-        power: 0.25 + hold * 0.15,
+        power: Math.min(1, 0.55 + hold * 0.32),
         hold,
-        until: Date.now() + 1000 + hold * 3000,
+        until: Date.now() + 2500 + hold * 3000,
       });
       navigator.vibrate?.(0);
     };
@@ -128,23 +251,26 @@ export function bindSoundControls(party) {
         action: "star",
         voice: party.voice || 0,
         index: Number(star.dataset.constellation),
-        power: 0.2,
+        power: 0.55,
         hold: 0,
-        until: Date.now() + 1000,
+        until: Date.now() + 2500,
       });
       timer = setInterval(() => {
         const hold = Math.min(5, (performance.now() - started) / 1000);
-        star.style.setProperty("--charge", String(0.2 + hold * 0.16));
+        star.style.setProperty(
+          "--charge",
+          String(Math.min(1, 0.55 + hold * 0.32)),
+        );
         navigator.vibrate?.(Math.round(10 + hold * 3));
         party.input({
           action: "star",
           voice: party.voice || 0,
           index: Number(star.dataset.constellation),
-          power: 0.2 + hold * 0.16,
+          power: Math.min(1, 0.55 + hold * 0.32),
           hold,
-          until: Date.now() + 1300,
+          until: Date.now() + 2500,
         });
-      }, 240);
+      }, 160);
     };
     star.onpointerdown = (e) => {
       star.setPointerCapture(e.pointerId);
