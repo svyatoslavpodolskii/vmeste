@@ -807,14 +807,19 @@ async function action(a, el) {
       render();
       break;
     case "activity":
-      sheet(activitySheet(store));
+      sheet(activitySheet(store, el.dataset.worldFilter || ""));
       break;
     case "activity-read-all":
       markRead(
         store,
-        activityEvents(store).map((e) => e.id),
+        activityEvents(store)
+          .filter(
+            (e) =>
+              !el.dataset.worldFilter || e.world === el.dataset.worldFilter,
+          )
+          .map((e) => e.id),
       );
-      sheet(activitySheet(store));
+      sheet(activitySheet(store, el.dataset.worldFilter || ""));
       break;
     case "activity-open": {
       const event = activityEvents(store).find(

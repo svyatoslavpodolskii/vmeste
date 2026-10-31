@@ -186,6 +186,19 @@ try {
   assert.equal(await b.locator(".game-invitation").count(), 0);
   const count = await b.locator("[data-unread-count]").textContent();
   assert.ok(Number(count) >= 10);
+  await open(b, "lettersworld");
+  assert.equal(await b.locator(".letters-digest").count(), 1);
+  await b.locator(".letters-digest").click();
+  await b.getByRole("heading", { name: "История писем" }).waitFor();
+  assert.equal(await b.locator(".activity-item").count(), 10);
+  assert.ok(
+    (await b.locator(".activity-item").first().textContent()).includes(
+      "Вопрос без спешки 9",
+    ),
+  );
+  await b.locator('[data-world="letters-inbox"]').click();
+  await b.locator(".letters-digest").waitFor();
+  await close(b);
   await b.locator(".activity-bell").click();
   await b.locator('.activity-item[data-id="lettersworld"]').first().click();
   await b

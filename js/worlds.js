@@ -258,7 +258,7 @@ export class WorldGames {
         .filter((e) => e.author !== me)
         .map((e) => e.id);
       markRead(this.store, ids);
-      return `<button class="btn text" data-world="letters-inbox">${icon("back")} Все письма</button><article class="question-letter"><span class="eyebrow">${esc(this.store.users.find((u) => u.localUserId === question.author)?.displayName || "Вопрос")}</span><h3>${esc(question.text)}</h3><small>${new Date(question.at).toLocaleDateString("ru-RU")}</small></article><div class="letter-thread">${answers.map((a) => `<article class="letter-answer ${a.author === me ? "own-answer" : ""}"><small>${esc(this.store.users.find((u) => u.localUserId === a.author)?.displayName || "Ваш человек")} · ${new Date(a.at).toLocaleDateString("ru-RU")}</small><p>${esc(a.text).replaceAll("\n", "<br>")}</p></article>`).join("") || '<p class="muted center">Здесь ещё будет ответ. Можно подождать столько, сколько нужно.</p>'}</div><form id="world-answer-form" data-question="${esc(question.id)}" data-target="${esc(question.author === me ? "" : question.author)}"><label>${question.author === me ? "Продолжить разговор" : "Ваш ответ"}<textarea name="text" maxlength="4000" required placeholder="Пишите, когда захочется…"></textarea></label><button class="btn primary wide" type="submit">Сохранить ответ</button></form>`;
+      return `<button class="btn text" data-world="letters-inbox">${icon("back")} Все письма</button><article class="question-letter"><span class="eyebrow">${esc(this.store.users.find((u) => u.localUserId === question.author)?.displayName || "Вопрос")}</span><h3>${esc(question.text)}</h3><small>${new Date(question.at).toLocaleDateString("ru-RU")}</small></article><div class="letter-thread">${answers.map((a) => `<article id="letter-${esc(a.id)}" class="letter-answer ${a.author === me ? "own-answer" : ""}"><small>${esc(this.store.users.find((u) => u.localUserId === a.author)?.displayName || "Ваш человек")} · ${new Date(a.at).toLocaleDateString("ru-RU")}</small><p>${esc(a.text).replaceAll("\n", "<br>")}</p></article>`).join("") || '<p class="muted center">Здесь ещё будет ответ. Можно подождать столько, сколько нужно.</p>'}</div><form id="world-answer-form" data-question="${esc(question.id)}" data-target="${esc(question.author === me ? "" : question.author)}"><label>${question.author === me ? "Продолжить разговор" : "Ваш ответ"}<textarea name="text" maxlength="4000" required placeholder="Пишите, когда захочется…"></textarea></label><button class="btn primary wide" type="submit">Сохранить ответ</button></form>`;
     }
     const questions = state.questions
       .filter((q) => !q.target || q.target === me || q.author === me)
@@ -272,7 +272,11 @@ export class WorldGames {
           );
         return last(b) - last(a);
       });
-    return `<div class="letters-toolbar"><button class="btn primary" data-world="letters-compose">${icon("plus")} Спросить</button><button class="btn soft" data-action="activity">${icon("clock")} Вся история</button></div><div class="letter-inbox">${
+    const unread = unreadEvents(this.store).filter(
+      (e) => e.world === "lettersworld",
+    );
+    const newAnswers = unread.filter((e) => e.type === "answer").length;
+    return `${unread.length ? `<button class="letters-digest" data-action="activity" data-world-filter="lettersworld"><span class="activity-symbol">${icon("letter")}</span><span><strong>???? ????????????? ??????</strong><small>${newAnswers ? `????? ???????: ${newAnswers} ? ` : ""}????? ???????: ${unread.length}</small></span><b>${unread.length}</b></button>` : ""}<div class="letters-toolbar"><button class="btn primary" data-world="letters-compose">${icon("plus")} Спросить</button><button class="btn soft" data-action="activity">${icon("clock")} Вся история</button></div><div class="letter-inbox">${
       questions
         .map((q) => {
           const answers = state.answers.filter((a) => a.question === q.id),
@@ -298,6 +302,11 @@ export class WorldGames {
     this.lettersView = "inbox";
     markRead(this.store, [event.id]);
     this.render();
+    if (event.type === "answer") {
+      document
+        .getElementById("letter-" + event.id)
+        ?.scrollIntoView({ block: "center", behavior: "instant" });
+    } else document.querySelector("#sheet").scrollTop = 0;
   }
   gardenControls(p) {
     const own = p.plots.filter((b) => b.author === this.store.userId),
