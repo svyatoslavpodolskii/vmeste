@@ -30,7 +30,9 @@ export function assignedConstellations(players, user, solo = false) {
 
 export function compositionState(contributors) {
   const voices = Object.values(contributors || {});
-  const points = voices.map((c) => c.pads?.[0] || [0.5, 0.5]);
+  const points = voices
+    .filter((c) => c.slot !== -1)
+    .map((c) => c.pads?.[0] || [0.5, 0.5]);
   const mean = (axis) =>
     points.reduce((n, p) => n + p[axis], 0) / Math.max(1, points.length);
   const spread =
@@ -63,5 +65,49 @@ export function phraseNotes(index, contributors, power = 0.5) {
       (0.018 + Math.min(1, power) * 0.023) / Math.sqrt(motif.notes.length / 3),
     pan: Math.sin(i * 1.7 + index) * 0.65,
     bright: index % 3,
+    timbre: index % 4,
   }));
+}
+
+// A small generative score: each performer supplies a motif, the other pads
+// choose its common scale and answer. A 24-second chapter changes the contour
+// even when nobody moves a control. No random notes outside the shared scale.
+export function gardenPhrase(contributors, seat, chapter) {
+  const voices = Object.values(contributors).filter((c) => c.slot !== -1);
+  if (!voices.length) return [];
+  const own = voices[seat % voices.length];
+  const partner = voices[(seat + 1) % voices.length];
+  const melody = own.pads?.[2] || [0.5, 0.5];
+  const movement = own.pads?.[3] || [0.5, 0.5];
+  const harmony =
+    voices.reduce((sum, c) => sum + (c.pads?.[1]?.[0] ?? 0.45), 0) /
+    voices.length;
+  const scale = [
+    [0, 2, 4, 7, 9],
+    [0, 3, 5, 7, 10],
+    [0, 2, 5, 7, 9],
+    [0, 4, 7, 9, 11],
+  ][Math.min(3, Math.floor(harmony * 4))];
+  const shared = compositionState(contributors);
+  const motif = constellations[(chapter + seat * 3 + shared.branch) % 12];
+  const answer = Math.floor((partner.pads?.[0]?.[1] ?? 0.5) * 4);
+  const count = 2 + Math.floor(melody[0] * 4);
+  return Array.from({ length: count }, (_, i) => {
+    let degree =
+      (Math.round(motif.notes[i % motif.notes.length] / 2) +
+        answer +
+        Math.floor(chapter / 3)) %
+      scale.length;
+    if (chapter % 2) degree = scale.length - 1 - degree;
+    const octave = melody[1] < 0.3 ? -12 : melody[1] > 0.7 ? 12 : 0;
+    return {
+      frequency: 440 * 2 ** ((shared.root + scale[degree] + octave - 69) / 12),
+      delay: (i * (0.28 + (1 - movement[0]) * 0.65)) / shared.tempo,
+      duration: 0.8 + (1 - movement[0]) * 2.4,
+      gain: (0.027 + melody[0] * 0.012) / Math.sqrt(voices.length),
+      pan: Math.sin(i * 1.7 + seat * 2) * (0.15 + movement[1] * 0.7),
+      bright: seat % 3,
+      timbre: seat % 4,
+    };
+  });
 }

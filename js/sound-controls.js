@@ -51,9 +51,24 @@ export function arrangeMeditation(state) {
       },
     ]),
   );
+  // Four movable voices stay on the plane; larger groups still each have
+  // their own constellation actions and musical memory.
+  if (!state.solo)
+    for (const player of state.players) {
+      if (state.contributors[player.id]) continue;
+      const saved = previous.find((c) => c.performer === player.id) || {};
+      state.contributors[player.id] = {
+        ...saved,
+        performer: player.id,
+        slot: -1,
+        pads: [],
+        layers: Array(8).fill(0),
+        moods: [0.5, 0.5, 0.5, 0.5],
+      };
+    }
 }
 function meditationPlane(f, user) {
-  return `<section class="meditation-mixer"><header><span class="eyebrow">ЧЕТЫРЕ ГОЛОСА · ОДНО НЕБО</span><h3>Характер музыки</h3></header><p>Двигайте свои огни. Каждый меняет свою гармонику; чужие огни видны рядом.</p><div class="plane-labels"><span>Прозрачно</span><span>Тепло</span></div><div class="meditation-plane" aria-label="Общая плоскость четырёх голосов"><div class="pad-grid" aria-hidden="true"><i></i><i></i></div>${meditationVoices(
+  return `<section class="meditation-mixer"><header><span class="eyebrow">ЧЕТЫРЕ ГОЛОСА · ОДНО НЕБО</span><h3>Характер музыки</h3></header><p>${meditationVoices(f.public).some((v) => v.owner === user) ? "Двигайте свои огни: сближение переплетает фразы, положение меняет общую гармонию." : "Огни двигают другие участники. Ваш вклад — созвездия ниже."}</p><div class="plane-labels"><span>Прозрачно</span><span>Тепло</span></div><div class="meditation-plane" aria-label="Общая плоскость четырёх голосов"><div class="pad-grid" aria-hidden="true"><i></i><i></i></div>${meditationVoices(
     { ...f.public, kind: f.kind },
   )
     .map((v) => {
@@ -125,7 +140,7 @@ export function soundControls(f, user, audio, voice = 0) {
       ] || {},
     role = f.public.solo ? voice : soundRole(f, user),
     r = roles[role];
-  return `<div class="instrument instrument-${r[2]}">${f.public.solo && f.kind !== "meditation" ? `<div class="voice-tabs" aria-label="Четыре одиночных пульта">${roles.map((r, i) => `<button data-party="voice" data-index="${i}" aria-pressed="${i === voice}">${r[0]}</button>`).join("")}</div>` : ``}<header class="instrument-title"><span class="instrument-sigil">${["◒", "⌁", "◉", "✧"][role]}</span><div><span class="eyebrow">ВАШ ПУЛЬТ / ${role + 1}</span><h3>${f.kind === "meditation" ? "Общее небо" : r[0]}</h3><p>${f.kind === "meditation" ? "Ваши голоса на одной плоскости" : r[1]}</p></div></header><button class="btn primary wide" data-party="sound">${icon(audio?.started ? "pause" : "play")} ${audio?.started ? "Пауза" : "Включить звук здесь"}</button>${
+  return `<div class="instrument instrument-${r[2]}">${f.public.solo && f.kind !== "meditation" ? `<div class="voice-tabs" aria-label="Четыре одиночных пульта">${roles.map((r, i) => `<button data-party="voice" data-index="${i}" aria-pressed="${i === voice}">${r[0]}</button>`).join("")}</div>` : ``}<header class="instrument-title"><span class="instrument-sigil">${["◒", "⌁", "◉", "✧"][role]}</span><div><span class="eyebrow">${f.kind === "meditation" ? "ВАШИ СОЗВЕЗДИЯ · " + assignedConstellations(f.public.players, user, f.public.solo).length : "ВАШ ПУЛЬТ / " + (role + 1)}</span><h3>${f.kind === "meditation" ? "Общее небо" : r[0]}</h3><p>${f.kind === "meditation" ? "У каждого свой отклик в общей музыке" : r[1]}</p></div></header><button class="btn primary wide" data-party="sound">${icon(audio?.started ? "pause" : "play")} ${audio?.started ? "Пауза" : "Включить звук здесь"}</button>${
     f.kind === "soundgarden"
       ? pad(
           0,
@@ -174,7 +189,8 @@ export function soundControls(f, user, audio, voice = 0) {
 }
 export function soundWorld(f) {
   const entries = Object.entries(f.public.contributors || {});
-  const points = entries.map(([id, c], i) => ({
+  const physicalVoices = entries.filter(([, c]) => c.slot !== -1);
+  const points = physicalVoices.map(([id, c], i) => ({
     id,
     x: 10 + (c.pads?.[0]?.[0] ?? 0.5) * 80,
     y: 18 + (c.pads?.[0]?.[1] ?? 0.5) * 60,

@@ -4,8 +4,66 @@ import {
   assignedConstellations,
   phraseNotes,
   constellations,
+  gardenPhrase,
 } from "../js/composition.js";
-import { soundControls } from "../js/sound-controls.js";
+test("the garden evolves without input and every panel changes the resulting phrase", () => {
+  const room = {
+    a: {
+      pads: [
+        [0.2, 0.2],
+        [0.1, 0.5],
+        [0.1, 0.5],
+        [0.1, 0.1],
+      ],
+    },
+    b: {
+      pads: [
+        [0.3, 0.3],
+        [0.1, 0.5],
+        [0.1, 0.5],
+        [0.1, 0.1],
+      ],
+    },
+  };
+  const baseline = gardenPhrase(room, 0, 0);
+  assert.notDeepEqual(gardenPhrase(room, 0, 1), baseline);
+  for (const bank of [0, 1, 2, 3]) {
+    const changed = structuredClone(room);
+    changed.a.pads[bank] = [1, 1];
+    changed.b.pads[bank] = [1, 1];
+    assert.notDeepEqual(gardenPhrase(changed, 0, 0), baseline, `panel ${bank}`);
+  }
+  for (let chapter = 0; chapter < 36; chapter++)
+    for (let seat = 0; seat < 2; seat++) {
+      const notes = gardenPhrase(room, seat, chapter);
+      assert.ok(notes.length >= 2 && notes.length <= 6);
+      assert.ok(
+        notes.every(
+          (n) => n.frequency >= 65 && n.frequency < 1050 && n.gain < 0.05,
+        ),
+      );
+    }
+});
+import { soundControls, arrangeMeditation } from "../js/sound-controls.js";
+test("a ten-person sky retains four movable voices and constellation access for everyone", () => {
+  const players = Array.from({ length: 10 }, (_, i) => ({
+    id: String(i),
+    name: String(i),
+  }));
+  const state = { kind: "meditation", players, contributors: {} };
+  arrangeMeditation(state);
+  assert.equal(
+    Object.values(state.contributors).filter((c) => c.slot >= 0).length,
+    4,
+  );
+  for (const p of players) {
+    assert.ok(state.contributors[p.id]);
+    assert.ok(assignedConstellations(players, p.id).length >= 1);
+  }
+  state.contributors["9"].memory = [0.4];
+  arrangeMeditation(state);
+  assert.equal(state.contributors["9"].memory[0], 0.4);
+});
 
 test("twelve distinct actions divide among performers with no omissions or overlaps", () => {
   for (const count of [1, 2, 3, 4]) {

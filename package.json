@@ -1,6 +1,6 @@
 {
   "name": "vmeste",
-  "version": "4.3.0",
+  "version": "4.3.1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -13,6 +13,8 @@
     "test:museum": "node tests/museum-live.mjs",
     "test:sound": "node tests/sound.mjs",
     "test:music": "node tests/music-live.mjs",
+    "test:music-audio": "node tests/music-audio.mjs",
+    "test:music-group": "node tests/music-group.mjs",
     "test:frequency": "node tests/frequency-live.mjs",
     "test:worlds": "node tests/worlds-live.mjs",
     "test:turns": "node tests/turns-live.mjs",

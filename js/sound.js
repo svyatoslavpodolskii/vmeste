@@ -1,4 +1,4 @@
-import { phraseNotes, compositionState } from "./composition.js";
+import { phraseNotes, compositionState, gardenPhrase } from "./composition.js";
 import { quad } from "./sound-controls.js";
 export const soundLayers = [
   "Берег",
@@ -402,25 +402,39 @@ export class NatureSound {
     this.nextMelody ||= 0;
     if (t >= this.nextMelody) {
       const shared = compositionState(contributors);
-      const phrases = entries.map(([id, c], seat) => {
-        const melody = c.pads?.[2] || [0.45, 0.5];
-        const motion = c.pads?.[3] || [0.35, 0.55];
-        return { id, c, seat, melody, motion };
-      });
+      const phrases = entries
+        .filter(([, c]) => c.slot !== -1)
+        .map(([id, c], seat) => {
+          const melody = c.pads?.[2] || [0.5, 0.5];
+          const motion = c.pads?.[3] || [0.5, 0.5];
+          return { id, c, seat, melody, motion };
+        });
       for (const { c, seat, melody, motion } of phrases) {
-        const phrase = phraseNotes(
-          (seat * 3 + shared.branch) % 12,
-          contributors,
-          0.45 + melody[0] * 0.4,
-        );
-        const count = 1 + Math.floor(melody[0] * 3);
+        const phrase =
+          mode === "soundgarden"
+            ? gardenPhrase(contributors, seat, Math.floor(Date.now() / 24000))
+            : phraseNotes(
+                (seat * 3 + shared.branch) % 12,
+                contributors,
+                0.45 + melody[0] * 0.4,
+              );
+        const count =
+          mode === "soundgarden"
+            ? phrase.length
+            : 1 + Math.floor(melody[0] * 3);
         for (const note of phrase.slice(0, count)) {
           this.note(
             {
               ...note,
               frequency:
                 note.frequency *
-                (melody[1] > 0.7 ? 2 : melody[1] < 0.3 ? 0.5 : 1),
+                (mode === "soundgarden"
+                  ? 1
+                  : melody[1] > 0.7
+                    ? 2
+                    : melody[1] < 0.3
+                      ? 0.5
+                      : 1),
               gain:
                 (note.gain * (mode === "meditation" ? 0.7 : 0.95)) /
                 Math.sqrt(entries.length),
@@ -458,35 +472,80 @@ export class NatureSound {
   }
   note(note, at) {
     const ctx = this.context;
-    const osc = ctx.createOscillator(),
-      harmonic = ctx.createOscillator();
+    this.activeNotes ||= new Set();
+    if (!ctx || ctx.state === "closed" || this.activeNotes.size >= 48) return;
+    const presets = [
+      {
+        attack: 0.32,
+        partials: [
+          [1, 1],
+          [2, 0.12],
+          [3, 0.04],
+        ],
+        cutoff: 1400,
+      },
+      {
+        attack: 0.14,
+        partials: [
+          [1, 1],
+          [2, 0.24],
+          [4, 0.045],
+        ],
+        cutoff: 2200,
+      },
+      {
+        attack: 0.5,
+        partials: [
+          [1, 1],
+          [1.5, 0.1],
+          [2, 0.06],
+        ],
+        cutoff: 1050,
+      },
+      {
+        attack: 0.09,
+        partials: [
+          [1, 1],
+          [2.003, 0.15],
+          [3, 0.055],
+        ],
+        cutoff: 1800,
+      },
+    ];
+    const preset = presets[(note.timbre ?? note.bright ?? 0) % 4];
     const gain = ctx.createGain(),
-      overtone = ctx.createGain();
-    const filter = ctx.createBiquadFilter(),
+      filter = ctx.createBiquadFilter(),
       pan = ctx.createStereoPanner();
-    osc.type = "sine";
-    harmonic.type = "sine";
-    osc.frequency.value = note.frequency;
-    harmonic.frequency.value = note.frequency * (note.bright === 2 ? 3 : 2);
-    overtone.gain.value = note.bright === 1 ? 0.16 : 0.07;
+    const oscillators = [],
+      weights = [];
     filter.type = "lowpass";
-    filter.frequency.value = 1000 + note.bright * 450;
+    filter.frequency.value = preset.cutoff;
     filter.Q.value = 0.5;
     pan.pan.value = note.pan;
+    const duration = Math.max(preset.attack + 0.2, note.duration);
     gain.gain.setValueAtTime(0.0001, at);
-    gain.gain.exponentialRampToValueAtTime(note.gain, at + 0.16);
-    gain.gain.exponentialRampToValueAtTime(0.0001, at + note.duration);
-    harmonic.connect(overtone).connect(filter);
-    osc.connect(filter).connect(gain).connect(pan);
+    gain.gain.exponentialRampToValueAtTime(note.gain, at + preset.attack);
+    gain.gain.exponentialRampToValueAtTime(0.0001, at + duration);
+    filter.connect(gain).connect(pan);
     pan.connect(this.master);
     pan.connect(this.reverb);
-    osc.start(at);
-    harmonic.start(at);
-    osc.stop(at + note.duration + 0.05);
-    harmonic.stop(at + note.duration + 0.05);
-    osc.onended = () => {
-      for (const node of [osc, harmonic, gain, overtone, filter, pan])
+    for (const [ratio, level] of preset.partials) {
+      const osc = ctx.createOscillator(),
+        weight = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.value = note.frequency * ratio;
+      weight.gain.value = level;
+      osc.connect(weight).connect(filter);
+      osc.start(at);
+      osc.stop(at + duration + 0.05);
+      oscillators.push(osc);
+      weights.push(weight);
+    }
+    this.activeNotes.add(gain);
+    oscillators[0].onended = () => {
+      for (const node of [...oscillators, ...weights, gain, filter, pan])
         node.disconnect();
+      this.activeNotes.delete(gain);
     };
   }
 
@@ -523,5 +582,6 @@ export class NatureSound {
     this.starVoices?.clear();
     this.starPhrases?.clear();
     this.nextMelody = 0;
+    this.activeNotes?.clear();
   }
 }

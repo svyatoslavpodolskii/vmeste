@@ -1665,6 +1665,7 @@ export class PartyGames {
       const voiceId = voice ? sender + ":voice" + voice : sender;
       if (
         s.kind === "meditation" &&
+        input.action !== "star" &&
         !meditationVoices(s).some((v) => v.id === voiceId && v.owner === sender)
       )
         return;
