@@ -57,8 +57,16 @@ async function match(count) {
   await a.locator('[data-action="play"][data-id="museum"]').click();
   await m.waitForFunction(() => window.testFrame?.kind === "museum");
   for (const p of pages.slice(1))
-    await p.locator('[data-action="open-live-game"]').click();
-  const rounds = count === 2 ? 4 : count;
+    if (await p.locator('[data-party="join"]').count())
+      await p.locator('[data-party="join"]').click();
+    else await p.locator('[data-action="open-live-game"]').click();
+  for (const p of pages) {
+    if (await p.locator('[data-party="join"]').count())
+      await p.locator('[data-party="join"]').click();
+    await p.locator('[data-party="ready"]').waitFor();
+  }
+  for (const p of pages) await p.locator('[data-party="ready"]').click();
+  const rounds = Math.max(4, count);
   for (let turn = 0; turn < rounds; turn++) {
     await m.waitForFunction(
       (t) =>

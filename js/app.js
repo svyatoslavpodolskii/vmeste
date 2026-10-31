@@ -1,3 +1,12 @@
+import {
+  activityEvents,
+  activitySheet,
+  unreadEvents,
+  markRead,
+} from "./activity.js";
+import { WorldGames, worldKinds } from "./worlds.js";
+import { categories } from "../data/ideas.js";
+import { roomMenu, settingsHome, backupSettings } from "./preferences.js";
 import { PartyGames, partyKinds, partyScreen } from "./party.js";
 import { roomSymbols, savedRooms, rememberRoom } from "./rooms.js";
 import {
@@ -21,6 +30,7 @@ import {
   closeSheet,
   toast,
   visualPicker,
+  avatarPicker,
   affinity,
   suggestion,
 } from "./ui.js";
@@ -91,16 +101,43 @@ const state = {
   status: navigator.onLine ? "Ждём второго" : "Офлайн",
   draft: [],
 };
+const worlds = new WorldGames({ store: () => store, peer: () => peer });
 const party = new PartyGames({
   store: () => store,
   peer: () => peer,
   soundSeed: () => `${roomId}:${userId}:${roomAuth?.record.publicKey.x}`,
+  onInvite: (frame) => {
+    state.invites ||= {};
+    state.invites[frame.kind] = frame;
+    if (!document.querySelector("#sheet").open && store?.authEstablished)
+      render();
+  },
   onFrame: (frame) => {
+    state.invites ||= {};
+    state.invites[frame.kind] = frame;
     state.partyFrame = frame;
     if (!document.querySelector("#sheet").open && store?.authEstablished)
       render();
   },
 });
+function updateUnread() {
+  if (!store) return;
+  state.unread = unreadEvents(store).length;
+  for (const badge of document.querySelectorAll("[data-unread-count]")) {
+    badge.textContent = state.unread;
+    badge.hidden = !state.unread;
+  }
+}
+window.addEventListener("vmeste-unread", updateUnread);
+function screenTabs() {
+  return `<div class="screen-tabs">${[...(peer?.games?.values() || [])]
+    .filter((f) => !f.finished)
+    .map(
+      (f) =>
+        `<button class="btn ${state.screenFrame?.kind === f.kind ? "lavender" : "soft"}" data-action="screen-game" data-id="${esc(f.kind)}">${esc(f.title)}</button>`,
+    )
+    .join("")}</div>`;
+}
 function render() {
   if (!store) {
     app.innerHTML = onboarding(roomId);
@@ -108,7 +145,7 @@ function render() {
   }
   if (store.authEstablished && (store.authViewer || state.screenOnly)) {
     const f = state.screenFrame;
-    app.innerHTML = `<main class="projector"><header><span>${roomSymbols(roomId)}</span>${btn("Мои комнаты", "rooms", "text")}${!store.authViewer ? btn("Играть здесь", "client-mode", "text") : ""}${btn("На весь экран", "fullscreen", "text")}</header><div class="projector-card"><span class="eyebrow">ОБЩИЙ ЭКРАН</span><div class="projector-live">${f ? partyScreen(f) : `<h1>Экран готов</h1><p>Начните игру на телефоне. Здесь появится общая карточка — без скрытых ответов и личных данных.</p>`}</div></div><footer>Управление остаётся на телефоне</footer></main>`;
+    app.innerHTML = `<main class="projector"><header><span>${roomSymbols(roomId)}</span>${btn("Мои комнаты", "rooms", "text")}${!store.authViewer ? btn("Играть здесь", "client-mode", "text") : ""}${btn("На весь экран", "fullscreen", "text")}</header><div class="projector-card"><span class="eyebrow">ОБЩИЙ ЭКРАН</span><div class="projector-live">${screenTabs()}${f ? partyScreen(f, true) : `<h1>Экран готов</h1><p>Начните игру на телефоне. Здесь появится общая карточка — без скрытых ответов и личных данных.</p>`}</div></div><footer>Управление остаётся на телефоне</footer></main>`;
     return;
   }
   if (store.authEstablished === false) {
@@ -125,10 +162,38 @@ function render() {
     capacity: store.authCapacity,
     viewer: store.authViewer,
   });
+  state.unread = unreadEvents(store).length;
   const scroll = window.scrollY;
   const feedScroll =
     document.querySelector("#recommendation-feed")?.scrollLeft || 0;
-  app.innerHTML = `<div class="app-shell ${store.authCapacity > 2 ? "friends-theme" : ""}">${header(state)}<main id="main">${partyKinds.includes(state.partyFrame?.kind) && state.partyFrame.controllerClient !== peer?.peer?.id ? `<aside class="live-game-banner"><span>🎲 ${esc(state.partyFrame.title)}</span>${btn("Присоединиться", "open-live-game", "primary")}</aside>` : ""}${{ ideas: ideasScreen, build: buildScreen, matches: matchesScreen, profile: profileScreen, games: gamesScreen }[state.tab](state)}</main>${navigation(state.tab, store.matches.length, store.authCapacity)}${["ideas", "build"].includes(state.tab) ? `<button class="discover-fab" data-action="swipe" aria-label="Листать идеи">${icon("shuffle")}<span>Листать идеи</span></button>` : ""}${state.connectedIntro ? '<div class="connection-intro" aria-live="polite"><span>✨</span><h2>Вы вместе</h2><p>Свои люди. Одна маленькая вселенная.</p></div>' : ""}</div>`;
+  app.innerHTML = `<div class="app-shell ${store.authCapacity > 2 ? "friends-theme" : ""}">${header(state)}<main id="main">${Object.values(
+    state.invites || {},
+  )
+    .filter(
+      (f) =>
+        !f.finished &&
+        (f.kind === state.partyFrame?.kind ||
+          !f.public?.joined?.includes(userId)),
+    )
+    .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0))
+    .slice(-1)
+    .map(
+      (f) =>
+        `<aside class="live-game-banner"><span>${esc(f.title)}</span>${btn(f.public?.joined?.includes(userId) ? "Вернуться" : "Присоединиться", "open-live-game", "soft", `data-id="${esc(f.kind)}"`)}</aside>`,
+    )
+    .join(
+      "",
+    )}${{ ideas: ideasScreen, build: buildScreen, matches: matchesScreen, profile: profileScreen, games: gamesScreen }[state.tab](state)}</main>${navigation(
+    state.tab,
+    store.matches.length,
+    store.authCapacity,
+    Object.values(state.invites || {}).some(
+      (f) =>
+        !f.finished &&
+        f.controller !== userId &&
+        !f.public?.joined?.includes(userId),
+    ),
+  )}${["ideas", "build"].includes(state.tab) ? `<button class="discover-fab" data-action="swipe" aria-label="Листать идеи">${icon("shuffle")}<span>Листать идеи</span></button>` : ""}${state.connectedIntro ? '<div class="connection-intro" aria-live="polite"><span>✨</span><h2>Вы вместе</h2><p>Свои люди. Одна маленькая вселенная.</p></div>' : ""}</div>`;
   window.scrollTo(0, scroll);
   const feed = document.querySelector("#recommendation-feed");
   if (feed) feed.scrollLeft = feedScroll;
@@ -145,7 +210,19 @@ function navigate(tab) {
   render();
   window.scrollTo(0, 0);
 }
+let syncStatusTimer;
 function setStatus(text) {
+  if (text === "Синхронизация…" && state.status === "На связи") return;
+  clearTimeout(syncStatusTimer);
+  if (text === "Синхронизация…") {
+    syncStatusTimer = setTimeout(() => showStatus("Обновляем данные…"), 2000);
+    return;
+  }
+  showStatus(
+    ["Вы вдвоём", "Всё синхронизировано"].includes(text) ? "На связи" : text,
+  );
+}
+function showStatus(text) {
   state.status = text;
   const el = document.querySelector("#connection-status");
   if (el) el.textContent = text;
@@ -153,11 +230,12 @@ function setStatus(text) {
     .querySelector(".sync-status")
     ?.classList.toggle(
       "connected",
-      ["Вы вдвоём", "Всё синхронизировано"].includes(text),
+      ["На связи", "Вы вдвоём", "Всё синхронизировано"].includes(text),
     );
 }
 async function enter(room, name, avatar = "🌷", creator = false, options = {}) {
   party.reset();
+  state.invites = {};
   state.partyFrame = null;
   state.screenFrame = null;
   state.screenOnly = false;
@@ -297,6 +375,10 @@ async function enter(room, name, avatar = "🌷", creator = false, options = {})
   });
   matchIds = new Set(store.matches.map((i) => i.id));
   store.addEventListener("change", (e) => {
+    if (e.detail.entries.some((e) => e.record.worldEvent)) {
+      worlds.changed(e.detail.entries);
+      updateUnread();
+    }
     const newMatches = store.matches.filter((i) => !matchIds.has(i.id));
     matchIds = new Set(store.matches.map((i) => i.id));
     if (newMatches.length) {
@@ -358,7 +440,7 @@ function detail(id) {
     "builtin-games-1",
   ].includes(id);
   sheet(
-    `<div class="detail-art">${art(i)}</div><span class="eyebrow">${esc(i.category || "ВАША ИДЕЯ")}</span><h2>${esc(i.title)}</h2><p class="detail-description">${esc(i.description || "Маленькая идея для вашего особенного вечера.")}</p><div class="tags"><span>${icon("clock")}${duration(i.duration || 30)}</span><span>${icon("home")}${esc(i.location || "Дома")}</span><span>${i.cost ? esc(i.cost) + " ₸ примерно" : "Бесплатно"}</span><span class="mood">${esc(i.mood || "Уютно")}</span></div>${i.materials ? `<h3>Что понадобится</h3><ul>${i.materials.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}<h3>Как провести время</h3><ol class="instructions">${(i.steps || [i.description || "Обсудите, как хотите провести время.", "Выберите удобный момент и приготовьте всё необходимое.", "Наслаждайтесь процессом — здесь не нужно делать идеально."]).map((x) => `<li>${esc(x)}</li>`).join("")}</ol>${playable ? btn("Начать игру " + icon("arrow"), "game", "lavender wide", `data-id="${esc(id)}"`) : ""}<div class="row detail-buttons">${btn(icon("heart") + (["like", "favorite"].includes(store.reaction(id)) ? " Нравится ♥" : " Нравится"), "like", "soft", `data-id="${esc(id)}"`)}${btn(icon("bookmark") + " В план", "add-plan", "primary", `data-id="${esc(id)}"`)}</div>${btn(store.reaction(id) === "favorite" ? "♥★ Убрать суперлайк" : "♥★ Суперлайк", "favorite", "text wide", `data-id="${esc(id)}"`)}${i.source === "user" && i.authorId === userId ? `<div class="row">${btn("Изменить", "edit-idea", "text", `data-id="${esc(id)}"`)}${btn("Удалить идею", "delete-idea", "text danger", `data-id="${esc(id)}"`)}</div>` : ""}`,
+    `<div class="detail-art">${art(i)}</div><span class="eyebrow">${esc(i.category || "ВАША ИДЕЯ")}</span><h2>${esc(i.title)}</h2><p class="detail-description">${esc(i.description || "Маленькая идея для вашего особенного вечера.")}</p><div class="tags"><span>${icon("clock")}${duration(i.duration || 30)}</span><span>${icon("home")}${esc(i.location || "Дома")}</span><span>${i.cost ? esc(i.cost) + " ₸ примерно" : "Бесплатно"}</span><span class="mood">${esc(i.mood || "Уютно")}</span></div>${i.materials ? `<h3>Что понадобится</h3><ul>${i.materials.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}<h3>Как провести время</h3><ol class="instructions">${(i.steps || [i.description || "Обсудите, как хотите провести время.", "Выберите удобный момент и приготовьте всё необходимое.", "Наслаждайтесь процессом — здесь не нужно делать идеально."]).map((x) => `<li>${esc(x)}</li>`).join("")}</ol>${playable ? btn("Начать игру " + icon("arrow"), "game", "lavender wide", `data-id="${esc(id)}"`) : ""}<div class="row detail-buttons">${btn(icon("heart") + " Нравится", "like", `soft reaction-button ${["like", "favorite"].includes(store.reaction(id)) ? "is-selected" : ""}`, `data-id="${esc(id)}" aria-pressed="${["like", "favorite"].includes(store.reaction(id))}"`)}${btn(icon("bookmark") + " В план", "add-plan", "primary", `data-id="${esc(id)}"`)}</div>${btn(icon("star") + " Суперлайк", "favorite", `lavender wide reaction-button ${store.reaction(id) === "favorite" ? "is-selected" : ""}`, `data-id="${esc(id)}" aria-pressed="${store.reaction(id) === "favorite"}"`)}${i.source === "user" && i.authorId === userId ? `<div class="row">${btn("Изменить", "edit-idea", "text", `data-id="${esc(id)}"`)}${btn("Удалить идею", "delete-idea", "text danger", `data-id="${esc(id)}"`)}</div>` : ""}`,
   );
 }
 function ideaForm(id) {
@@ -392,6 +474,10 @@ function gamePool(kind) {
 let gameTimer,
   historyQueue = Promise.resolve();
 function startGame(kind) {
+  if (worldKinds.includes(kind)) {
+    worlds.open(kind);
+    return;
+  }
   if (partyKinds.includes(kind)) {
     party.start(kind);
     return;
@@ -562,13 +648,24 @@ function tasksSheet() {
       .join("")}</div>`,
   );
 }
-let swipeSeen = [],
+let swipeFilters = { category: "Всё", location: "", minutes: 0, free: false },
+  swipeSeen = [],
   swipeDeck = [],
   swipeMode = "discover",
   swipeBusy = false;
 function prepareSwipe(random = false) {
   const available = store.ideas.filter(
-    (i) => swipeMode !== "plan" || !state.draft.includes(i.id),
+    (i) =>
+      (swipeMode !== "plan" || !state.draft.includes(i.id)) &&
+      (swipeFilters.category === "Всё" ||
+        [i.category, i.mood, i.location, i.topic].includes(
+          swipeFilters.category,
+        )) &&
+      (!swipeFilters.location ||
+        i.location === swipeFilters.location ||
+        i.location === "Где угодно") &&
+      (!swipeFilters.minutes || i.duration <= swipeFilters.minutes) &&
+      (!swipeFilters.free || !i.cost),
   );
   const recent = (i) =>
     Math.max(
@@ -610,13 +707,11 @@ function prepareSwipe(random = false) {
   ).map((i) => i.id);
 }
 function swipeView() {
-  swipeDeck = swipeDeck.filter(
-    (id) => ideaById(id) && (swipeMode !== "plan" || !state.draft.includes(id)),
-  );
+  swipeDeck = swipeDeck.filter((id) => ideaById(id));
   if (!swipeDeck.length) prepareSwipe(true);
   const i = ideaById(swipeDeck[0]);
   sheet(
-    `<div class="discover-head"><span class="eyebrow">DISCOVER · ДЛЯ ДВОИХ</span><h2>${swipeMode === "plan" ? "Выбираем вечер" : "Открываем новое"}</h2><div class="row">${btn("Открытия", "swipe-mode", swipeMode === "discover" ? "primary" : "soft", 'data-id="discover"')}${btn("В план", "swipe-mode", swipeMode === "plan" ? "primary" : "soft", 'data-id="plan"')}${btn(icon("shuffle"), "swipe-random", "soft", 'aria-label="Перемешать идеи"')}</div></div>${i ? `<div class="swipe-stack"><div id="swipe-card" class="bond-${affinity(store, i).level}" data-id="${esc(i.id)}">${art(i)}<div class="swipe-copy">${affinity(store, i).html}<h3>${esc(i.title)}</h3><p>${esc(i.description)}</p><span>${duration(i.duration)} · ${esc(i.location)}</span></div></div></div><p class="muted center">Влево — дальше · вправо — ${swipeMode === "plan" ? "в план" : "нравится"}</p><div class="swipe-actions">${btn(icon("close"), "swipe-next", "soft", 'aria-label="Следующая идея"')}${btn(icon("heart"), "swipe-yes", "primary", `data-id="${esc(i.id)}" aria-label="${swipeMode === "plan" ? "Добавить в план" : "Нравится"}"`)}${btn(icon("plus"), "swipe-add", "lavender", `data-id="${esc(i.id)}" aria-label="В план"`)}</div>` : "<p>Все идеи уже в вашем плане. Переключитесь в открытия.</p>"}`,
+    `<div class="discover-head"><span class="eyebrow">DISCOVER · ДЛЯ ДВОИХ</span><h2>${swipeMode === "plan" ? "Выбираем вечер" : "Открываем новое"}</h2>${btn(icon("filter") + " Подобрать", "swipe-filter", "soft")}<p class="swipe-filter-summary">${[swipeFilters.category !== "Всё" ? swipeFilters.category : "Все темы", swipeFilters.location, swipeFilters.minutes ? `до ${swipeFilters.minutes} мин` : "", swipeFilters.free ? "бесплатно" : ""].filter(Boolean).join(" · ")}</p><div class="row">${btn("Открытия", "swipe-mode", swipeMode === "discover" ? "primary" : "soft", 'data-id="discover"')}${btn("В план", "swipe-mode", swipeMode === "plan" ? "primary" : "soft", 'data-id="plan"')}${btn(icon("shuffle"), "swipe-random", "soft", 'aria-label="Перемешать идеи"')}</div></div>${i ? `<div class="swipe-stack"><div id="swipe-card" class="bond-${affinity(store, i).level}" data-id="${esc(i.id)}">${art(i)}<div class="swipe-copy">${affinity(store, i).html}<h3>${esc(i.title)}</h3><p>${esc(i.description)}</p><span>${duration(i.duration)} · ${esc(i.location)}</span></div></div></div><p class="muted center">Влево — дальше · вправо — ${swipeMode === "plan" ? "в план" : "нравится"}</p><div class="swipe-actions">${btn(icon("back"), "swipe-back", "soft", `aria-label="Предыдущая идея" ${swipeSeen.length ? "" : "disabled"}`)}${btn(icon("close"), "swipe-next", "soft", 'aria-label="Следующая идея"')}${btn(icon("heart"), "swipe-yes", "primary", `data-id="${esc(i.id)}" aria-label="${swipeMode === "plan" ? "Добавить в план" : "Нравится"}"`)}${btn(icon("plus"), "swipe-add", "lavender", `data-id="${esc(i.id)}" aria-label="В план"`)}</div>` : "<p>По этим условиям идей не осталось. Измените подбор или откройте новый круг.</p>"}`,
   );
 }
 async function persistSwipe() {
@@ -704,6 +799,46 @@ async function action(a, el) {
     case "detail":
       detail(id);
       break;
+    case "plan-like":
+      await store.react(
+        id,
+        ["like", "favorite"].includes(store.reaction(id)) ? "none" : "like",
+      );
+      render();
+      break;
+    case "activity":
+      sheet(activitySheet(store));
+      break;
+    case "activity-read-all":
+      markRead(
+        store,
+        activityEvents(store).map((e) => e.id),
+      );
+      sheet(activitySheet(store));
+      break;
+    case "activity-open": {
+      const event = activityEvents(store).find(
+        (e) => e.id === el.dataset.event,
+      );
+      if (event) worlds.openEvent(event);
+      break;
+    }
+    case "settings":
+      sheet(settingsHome());
+      break;
+    case "settings-files":
+      sheet(backupSettings());
+      break;
+    case "room-menu":
+      sheet(roomMenu(identityKey, roomId));
+      break;
+    case "edit-profile": {
+      const me = store.users.find((u) => u.localUserId === userId);
+      sheet(
+        `<h2>Ваш образ</h2><form id="profile-form"><label>Имя<input name="name" maxlength="60" value="${esc(me?.displayName || "")}" required></label>${avatarPicker(me?.avatar || "🌷")}<button class="btn primary wide" type="submit">Сохранить</button></form>`,
+      );
+      break;
+    }
     case "like":
       await store.react(
         id,
@@ -808,6 +943,47 @@ async function action(a, el) {
       prepareSwipe(true);
       swipeView();
       break;
+    case "swipe-filter":
+      sheet(
+        `<h2>Какие идеи листаем?</h2><form id="swipe-filter-form"><label>Тема<select name="category">${categories
+          .filter((c) => !["Сюрприз", "Бесплатно", "Быстро"].includes(c))
+          .map(
+            (c) =>
+              `<option ${swipeFilters.category === c ? "selected" : ""}>${c}</option>`,
+          )
+          .join(
+            "",
+          )}</select></label><label>Место<select name="location"><option value="">Где угодно</option>${["Дома", "На улице"].map((c) => `<option ${swipeFilters.location === c ? "selected" : ""}>${c}</option>`).join("")}</select></label><label>Есть время<select name="minutes">${[
+          [0, "Без ограничений"],
+          [15, "15 минут"],
+          [30, "Полчаса"],
+          [60, "Час"],
+          [120, "Два часа"],
+        ]
+          .map(
+            ([v, n]) =>
+              `<option value="${v}" ${swipeFilters.minutes === v ? "selected" : ""}>${n}</option>`,
+          )
+          .join(
+            "",
+          )}</select></label><label class="check-label"><input type="checkbox" name="free" ${swipeFilters.free ? "checked" : ""}>Бесплатно</label><button class="btn primary wide" type="submit">Листать подходящие</button></form>`,
+      );
+      break;
+    case "swipe-back": {
+      if (swipeBusy) break;
+      let previous;
+      while (swipeSeen.length && !previous) {
+        const id = swipeSeen.pop();
+        if (ideaById(id)) previous = id;
+      }
+      if (previous) {
+        swipeDeck = swipeDeck.filter((id) => id !== previous);
+        swipeDeck.unshift(previous);
+        await persistSwipe();
+        swipeView();
+      }
+      break;
+    }
     case "swipe-next":
       await swipeAdvance(false);
       break;
@@ -997,9 +1173,16 @@ async function action(a, el) {
       party.showRecords();
       break;
     case "open-live-game":
-      party.open();
+      if (id) party.openTable(id);
+      else party.open();
+      break;
+    case "screen-game":
+      state.screenKind = id;
+      state.screenFrame = peer?.games?.get(id);
+      render();
       break;
     case "screen-mode":
+      closeSheet();
       state.screenOnly = true;
       state.screenFrame = peer?.lastGame;
       render();
@@ -1019,16 +1202,7 @@ async function action(a, el) {
         ?.scrollIntoView({ behavior: "smooth" });
       break;
     case "rooms":
-      sheet(
-        `<h2>Мои комнаты</h2><div class="rooms-list">${savedRooms(identityKey)
-          .map(
-            (r) =>
-              `<button class="room-choice" data-action="switch-room" data-id="${esc(r.id)}"><span>${roomSymbols(r.id)}</span><strong>${esc(r.name || "Наша комната")}</strong><small>${r.viewer ? "Общий экран" : r.capacity === 10 ? "Компания · до 10" : "Для двоих"}</small></button>`,
-          )
-          .join(
-            "",
-          )}</div><div class="row">${btn("Создать комнату", "new-room", "primary")}${btn("По приглашению", "join", "soft")}</div>`,
-      );
+      sheet(roomMenu(identityKey, roomId));
       break;
     case "switch-room":
       closeSheet();
@@ -1192,6 +1366,17 @@ document.addEventListener("submit", async (e) => {
         });
         navigate("ideas");
         toast("Идея сохранена ♡");
+        break;
+      case "swipe-filter-form":
+        swipeFilters = {
+          category: fields.category,
+          location: fields.location,
+          minutes: Number(fields.minutes),
+          free: !!fields.free,
+        };
+        prepareSwipe(true);
+        await persistSwipe();
+        swipeView();
         break;
       case "filter-form":
         state.mood = fields.mood;
@@ -1530,10 +1715,19 @@ window.vmesteBeforeUpdate = async () => {
 };
 
 window.addEventListener("vmeste-game-view", (e) => {
-  state.screenFrame = e.detail;
+  const incoming = e.detail;
+  if (state.screenKind)
+    state.screenFrame = peer?.games?.get(state.screenKind) || incoming;
+  else if (
+    !["soundgarden", "meditation"].includes(incoming.kind) ||
+    !state.screenFrame ||
+    ["soundgarden", "meditation"].includes(state.screenFrame.kind)
+  )
+    state.screenFrame = incoming;
   if (store?.authViewer || state.screenOnly) {
     const live = document.querySelector(".projector-live");
-    if (live) live.innerHTML = partyScreen(e.detail);
+    if (live)
+      live.innerHTML = screenTabs() + partyScreen(state.screenFrame, true);
     else render();
   }
 });

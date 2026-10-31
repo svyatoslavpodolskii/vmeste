@@ -1,11 +1,13 @@
 ﻿import { Sync } from "./sync.js";
 import { keyId } from "./auth.js";
+import { chooseGame } from "./game-protocol.js";
 export class RoomPeer {
   constructor(store, onStatus, auth) {
     this.store = store;
     this.status = onStatus;
     this.auth = auth;
     this.sessions = new Map();
+    this.games = new Map();
     this.stopped = false;
     this.change = (e) => {
       if (e.detail.local)
@@ -47,7 +49,16 @@ export class RoomPeer {
         .map((s) => s.admission.remoteMemberId || s.admission.remote?.memberId),
     ]);
   }
+  onlineDisplays() {
+    return this.isHub
+      ? [...this.sessions.values()].filter(
+          (s) =>
+            s.admission?.authorized && s.admission.remoteViewer && s.c.open,
+        ).length
+      : this.store.authScreens?.length || 0;
+  }
   async start() {
+    this.store.authScreens = [];
     const digest = new Uint8Array(
       await crypto.subtle.digest(
         "SHA-256",
@@ -117,6 +128,7 @@ export class RoomPeer {
       { debug: 0 },
     ));
     peer.on("open", () => {
+      window.dispatchEvent(new CustomEvent("vmeste-peer-ready"));
       if (peer !== this.peer) return;
       if (!hub) this.connect();
     });
@@ -204,8 +216,8 @@ export class RoomPeer {
         if (!session.admission.remoteViewer && !this.store.authViewer)
           session.sync.hello();
         if (this.isHub) this.shareRoster();
-        if (this.lastGame && session.admission.remoteViewer)
-          c.send({ type: "game-view", frame: this.lastGame });
+        for (const frame of this.games.values())
+          c.send({ type: "game-view", frame });
       });
     });
     c.on("data", async (m) => {
@@ -227,6 +239,7 @@ export class RoomPeer {
           : [];
         this.auth.record.capacity = m.capacity === 10 ? 10 : 2;
         this.store.authOnline = Array.isArray(m.online) ? m.online : [];
+        this.store.authScreens = Array.isArray(m.screens) ? m.screens : [];
         await this.auth.save();
         this.store.dispatchEvent(
           new CustomEvent("change", { detail: { entries: [], local: false } }),
@@ -259,7 +272,12 @@ export class RoomPeer {
       }
       if (m?.type === "play-private" && !session.admission.remoteViewer) {
         if (this.isHub) {
-          if (this.lastGame?.controllerClient === c.peer)
+          if (
+            [...this.games.values()].some(
+              (f) =>
+                f.round === m.payload?.round && f.controllerClient === c.peer,
+            )
+          )
             this.routePrivate(m.target, m.payload);
         } else if (!this.store.authViewer)
           window.dispatchEvent(
@@ -275,6 +293,12 @@ export class RoomPeer {
             session.admission.remote.memberId;
           m.frame.controllerClient = c.peer;
         }
+        const chosen = chooseGame(this.games.get(m.frame.kind), m.frame);
+        if (chosen !== m.frame) {
+          c.send({ type: "game-view", frame: chosen });
+          return;
+        }
+        this.games.set(m.frame.kind, m.frame);
         this.lastGame = m.frame;
         window.dispatchEvent(
           new CustomEvent("vmeste-game-view", { detail: m.frame }),
@@ -311,7 +335,10 @@ export class RoomPeer {
         this.admission = null;
       }
       if (this.isHub) this.shareRoster();
-      if (!this.sessions.size)
+      if (
+        !this.sessions.size ||
+        (!this.store.authViewer && this.players().length === 0)
+      )
         this.status(navigator.onLine ? "Ждём участников" : "Офлайн");
     };
     c.on("close", closed);
@@ -327,6 +354,12 @@ export class RoomPeer {
       capacity: this.auth.record.capacity,
       displays: this.auth.record.displays,
       online: [...this.onlineMembers()],
+      screens: [...this.sessions.values()]
+        .filter(
+          (s) =>
+            s.admission?.authorized && s.admission.remoteViewer && s.c.open,
+        )
+        .map((s) => s.c.peer),
     };
     for (const s of this.players()) s.c.send(msg);
   }
@@ -337,6 +370,14 @@ export class RoomPeer {
       controller: this.store.userId,
       controllerClient: this.peer?.id,
     };
+    const chosen = chooseGame(this.games.get(frame.kind), frame);
+    if (chosen !== frame) {
+      window.dispatchEvent(
+        new CustomEvent("vmeste-game-view", { detail: chosen }),
+      );
+      return;
+    }
+    this.games.set(frame.kind, frame);
     this.lastGame = frame;
     for (const s of this.sessions.values())
       if (s.admission?.authorized && s.c.open)
@@ -353,16 +394,17 @@ export class RoomPeer {
     if (
       !input ||
       JSON.stringify(input).length > 14000 ||
-      input.round !== this.lastGame?.round
+      ![...this.games.values()].some((f) => f.round === input.round)
     )
       return;
+    const game = [...this.games.values()].find((f) => f.round === input.round);
     const msg = { type: "play-command", sender, input };
-    if (this.lastGame?.controllerClient === this.peer?.id)
+    if (game?.controllerClient === this.peer?.id)
       window.dispatchEvent(
         new CustomEvent("vmeste-game-input", { detail: { sender, input } }),
       );
     else {
-      const target = this.sessions.get(this.lastGame?.controllerClient);
+      const target = this.sessions.get(game?.controllerClient);
       if (target?.admission?.authorized && !target.admission.remoteViewer)
         target.c.send(msg);
     }

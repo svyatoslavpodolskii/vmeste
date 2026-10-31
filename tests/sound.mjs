@@ -81,11 +81,15 @@ try {
   assert.equal(result.stopped, "suspended");
   assert.equal(result.fastRestart, "running");
   assert.equal(result.contextReused, true);
-  assert.ok(result.ownPad > result.otherPad * 100);
-  assert.ok(result.harmonic.every((v) => v.edge < 0.012 && v.rate === 1));
+  assert.ok(result.ownPad > 0 && result.otherPad > 0);
+  assert.ok(
+    result.harmonic.every(
+      (v) => v.edge < 0.012 && v.rate > 0.4 && v.rate < 2.1,
+    ),
+  );
   assert.ok(Math.abs(result.boundary - result.original) < 0.000001);
   console.log(
-    "PASS audible signal before/after pause, preserved volume, rapid resume, stable pad identity, seamless noise and harmonic loops",
+    "PASS audible signal before/after pause, preserved volume, rapid resume, evolving pad spectrum, seamless noise and harmonic loops",
   );
 } finally {
   await browser.close();

@@ -176,7 +176,7 @@ test("questions and truth are one pool; fresh authored prompts lead, old ones ro
   assert.deepEqual(q, gamePool(s, "prediction"));
   assert.deepEqual(q, gamePool(s, "echo"));
   const deck = sessionDeck(s, "questions");
-  assert.equal(deck.length, 13);
+  assert.equal(deck.length, q.length);
   assert.ok(deck.slice(0, 10).every((x) => x.startsWith("Свежий вопрос")));
   await s.save("plans", {
     title: "История",
@@ -187,7 +187,8 @@ test("questions and truth are one pool; fresh authored prompts lead, old ones ro
     ),
   });
   const next = sessionDeck(s, "prediction");
-  assert.ok(next.every((x) => !deck.includes(x)));
+  assert.deepEqual(new Set(next), new Set(deck));
+  assert.equal(next[0], deck[0]);
   s.db.close();
 });
 test("visual room code is stable and legacy avatars remain available", () => {

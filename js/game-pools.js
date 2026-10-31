@@ -93,8 +93,7 @@ export function sessionDeck(store, kind) {
       (a, b) =>
         fresh.findIndex((t) => cardKey(t.title) === cardKey(a)) -
         fresh.findIndex((t) => cardKey(t.title) === cardKey(b)),
-    )
-    .slice(0, 40);
+    );
   const rotated = pool
     .filter((item) => !freshKeys.has(cardKey(item)))
     .map((item) => ({
@@ -104,5 +103,5 @@ export function sessionDeck(store, kind) {
     }))
     .sort((a, b) => a.t - b.t || a.random - b.random)
     .map((r) => r.item);
-  return chosen.concat(rotated.slice(0, chosen.length ? 3 : 12));
+  return chosen.concat(rotated);
 }

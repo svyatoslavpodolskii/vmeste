@@ -62,6 +62,15 @@ export function revealFrequency(s) {
   return true;
 }
 export function frequencyCommand(s, sender, input) {
+  if (
+    input.action === "frequency-spoken" &&
+    s.phase === "clue" &&
+    sender === s.lead
+  ) {
+    s.clue = "Подсказка прозвучала вслух";
+    s.phase = "guess";
+    return true;
+  }
   if (input.action !== "answer") return false;
   if (s.phase === "clue" && sender === s.lead) {
     const clue = String(input.values?.answer || "")
@@ -145,7 +154,7 @@ export function frequencyControls(f, userId, secret) {
   const p = f.public;
   if (p.phase === "clue")
     return p.lead === userId
-      ? `<div class="private-instructions"><small>ВАША ТАЙНАЯ ЧАСТОТА</small><h3 data-frequency-secret>${secret.target ?? "Получаем…"}</h3><p>0 — ${esc(p.axis[0])}. 100 — ${esc(p.axis[1])}.</p></div><form id="party-answer-form"><label>Пример в этой точке шкалы<input name="answer" maxlength="160" required placeholder="Предмет, ситуация, персонаж…"></label><p class="fine">Не называйте число, процент или положение на шкале. Дайте один образ — его предстоит почувствовать.</p><button class="btn primary wide">Передать подсказку</button></form>`
+      ? `<div class="private-instructions"><small>ВАША ТАЙНАЯ ЧАСТОТА</small><h3 data-frequency-secret>${secret.target ?? "Получаем…"}</h3><p>0 — ${esc(p.axis[0])}. 100 — ${esc(p.axis[1])}.</p></div><p class="game-instruction">Скажите вслух один образ в этой точке шкалы. Не называйте число. Если вы далеко друг от друга, используйте ваш звонок.</p><button class="btn primary wide" data-party="frequency-spoken">Подсказка сказана</button><details class="game-rules"><summary>Удобнее написать?</summary><form id="party-answer-form"><label>Подсказка<input name="answer" maxlength="160" required></label><button class="btn soft wide">Передать подсказку</button></form></details>`
       : '<div class="game-instruction"><h3>Ловите ход мыслей</h3><p>Подсказчик видит точку и подбирает пример. Скоро вы решите, где он находится на шкале.</p></div>';
   if (p.phase === "guess")
     return p.lead === userId

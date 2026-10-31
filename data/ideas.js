@@ -1,3 +1,4 @@
+import { topics, enrichIdea } from "./topics.js";
 import { moreIdeas } from "./more-ideas.js"; // Строки: название | описание | минуты | стоимость (₸, ориентир).
 const groups = [
   [
@@ -263,3 +264,8 @@ export const categories = [
 ];
 
 builtinIdeas.push(...moreIdeas);
+
+for (let i = 0; i < builtinIdeas.length; i++)
+  builtinIdeas[i] = enrichIdea(builtinIdeas[i]);
+for (const topic of topics)
+  if (!categories.includes(topic.name)) categories.push(topic.name);

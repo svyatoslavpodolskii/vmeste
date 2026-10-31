@@ -8,6 +8,27 @@ export const esc = (v) =>
       ],
   );
 const paths = {
+  letter: "M3 5h18v14H3V5Zm0 0 9 8 9-8",
+  bell: "M4 17h16l-2-4V8a6 6 0 0 0-12 0v5l-2 4Zm6 4h4",
+  plant: "M12 22V9M12 14Q2 15 3 5q9-1 9 9Zm0-3q10 1 9-9-9 0-9 9Z",
+  map: "m2 5 6-3 8 3 6-3v17l-6 3-8-3-6 3V5Zm6-3v17m8-14v17",
+
+  water: "M12 2S4 10 4 15a8 8 0 0 0 16 0c0-5-8-13-8-13Zm-4 14q0 4 4 4",
+  story: "M3 4q5-2 9 1 4-3 9-1v16q-5-2-9 1-4-3-9-1V4Zm9 1v16",
+
+  settings:
+    "M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8ZM10 2h4l1 3 3 1 3-1 2 4-2 2v3l2 2-2 4-3-1-3 1-1 3h-4l-1-3-3-1-3 1-2-4 2-2v-3L1 9l2-4 3 1 3-1 1-3Z",
+  folder: "M3 6h7l2 3h9v12H3V6Z",
+  gallery: "M3 3h18v18H3V3Zm0 13 5-5 5 5 3-3 5 5M15 7h.1",
+  screen: "M2 3h20v14H2V3Zm10 14v5m-5 0h10",
+  shield: "m12 2 9 4v6c0 6-9 10-9 10S3 18 3 12V6l9-4Zm-4 10 3 3 6-7",
+  refresh: "M21 8a9 9 0 1 0-1 10M21 2v6h-6",
+  link: "m10 13 4-4M9 7l3-3a5 5 0 0 1 7 7l-3 3M15 17l-3 3a5 5 0 0 1-7-7l3-3",
+  download: "M12 2v13m-5-5 5 5 5-5M3 16v6h18v-6",
+  back: "M19 12H5m6-6-6 6 6 6",
+  play: "m8 4 12 8-12 8V4Z",
+  pause: "M8 4v16M16 4v16",
+  star: "m12 2 3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1 3-6Z",
   games: "M6 8h12l4 11-4 2-4-5h-4l-4 5-4-2L6 8ZM6 12h4m-2-2v4m8-2h.1m2 2h.1",
   heart:
     "M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z",
@@ -80,7 +101,7 @@ export function card(idea, store, { match = false } = {}) {
   const reaction = store.reaction(idea.id),
     liked = ["like", "favorite"].includes(reaction);
   const bond = affinity(store, idea);
-  return `<article class="idea-card bond-${bond.level}" data-idea="${esc(idea.id)}"><button class="art-button" data-action="detail" data-id="${esc(idea.id)}" aria-label="Открыть: ${esc(idea.title)}">${art(idea)}</button><div class="card-info"><button class="title-button" data-action="detail" data-id="${esc(idea.id)}"><h3>${esc(idea.title)}</h3></button><p>${esc(idea.description)}</p><div class="tags"><span>${icon("clock")}${duration(idea.duration || 30)}</span><span>${icon("home")}${esc(idea.location || "Дома")}</span><span class="mood">${esc(idea.mood || "Уютно")}</span></div>${match ? `<div class="match-label">${bond.html}${store.authCapacity>2?"Нравится нескольким участникам":"Понравилось вам обоим"}</div>` : ""}<div class="card-actions">${btn(icon("bookmark") + " В план", "add-plan", "soft", `data-id="${esc(idea.id)}"`)}</div></div><button class="icon-btn like ${liked ? "liked" : ""}" data-action="like" data-id="${esc(idea.id)}" aria-label="${liked ? "Убрать симпатию" : "Нравится"}: ${esc(idea.title)}" title="Нажмите — лайк; удерживайте — суперлайк" aria-pressed="${liked}">${reaction === "favorite" ? `<span class="super-heart">${icon("heart")}<small>✦</small></span>` : icon("heart")}</button></article>`;
+  return `<article class="idea-card bond-${bond.level}" data-idea="${esc(idea.id)}"><button class="art-button" data-action="detail" data-id="${esc(idea.id)}" aria-label="Открыть: ${esc(idea.title)}">${art(idea)}</button><div class="card-info"><button class="title-button" data-action="detail" data-id="${esc(idea.id)}"><h3>${esc(idea.title)}</h3></button><p>${esc(idea.description)}</p><div class="tags"><span>${icon("clock")}${duration(idea.duration || 30)}</span><span>${icon("home")}${esc(idea.location || "Дома")}</span><span class="mood">${esc(idea.mood || "Уютно")}</span></div>${match ? `<div class="match-label">${bond.html}${store.authCapacity > 2 ? "Нравится нескольким участникам" : "Понравилось вам обоим"}</div>` : ""}<div class="card-actions">${btn(icon("bookmark") + " В план", "add-plan", "soft", `data-id="${esc(idea.id)}"`)}</div></div><button class="icon-btn like ${liked ? "liked" : ""}" data-action="like" data-id="${esc(idea.id)}" aria-label="${liked ? "Убрать симпатию" : "Нравится"}: ${esc(idea.title)}" title="Нажмите — лайк; удерживайте — суперлайк" aria-pressed="${liked}">${reaction === "favorite" ? `<span class="super-heart">${icon("heart")}<small>✦</small></span>` : icon("heart")}</button></article>`;
 }
 export function empty(title, text, action = "ideas", label = "Найти идею") {
   return `<div class="empty"><span class="empty-icon">♡</span><h3>${title}</h3><p>${text}</p>${btn(label, action, "lavender")}</div>`;
@@ -98,7 +119,7 @@ export function affinity(store, idea) {
   );
   const unique = [...new Map(reactions.map((r) => [r.userId, r])).values()];
   const both = unique.length >= 2,
-    fire = unique.filter((r) => r.reaction === "favorite").length>=2;
+    fire = unique.filter((r) => r.reaction === "favorite").length >= 2;
   const anySuper = unique.some((r) => r.reaction === "favorite");
   const level = fire
     ? "fire"

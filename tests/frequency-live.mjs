@@ -63,7 +63,15 @@ async function match(count) {
   await host.locator('[data-action="play"][data-id="frequency"]').click();
   await m.waitForFunction(() => window.testFrame?.kind === "frequency");
   for (const p of pages.filter((p) => p !== host))
-    await p.locator('[data-action="open-live-game"]').click();
+    if (await p.locator('[data-party="join"]').count())
+      await p.locator('[data-party="join"]').click();
+    else await p.locator('[data-action="open-live-game"]').click();
+  for (const p of pages) {
+    if (await p.locator('[data-party="join"]').count())
+      await p.locator('[data-party="join"]').click();
+    await p.locator('[data-party="ready"]').waitFor();
+  }
+  for (const p of pages) await p.locator('[data-party="ready"]').click();
   const rounds = Math.max(4, count),
     used = [];
   for (let turn = 0; turn < rounds; turn++) {
@@ -104,10 +112,7 @@ async function match(count) {
       assert.equal(await p.locator("[data-frequency-secret]").count(), 0);
     assert.ok(!used.includes(info.axis.join("|")));
     used.push(info.axis.join("|"));
-    await lead
-      .locator("#party-answer-form input")
-      .fill("Завтрак в домике над облаками");
-    await lead.locator("#party-answer-form button").click();
+    await lead.locator('[data-party="frequency-spoken"]').click();
     await m.waitForFunction(() => window.testFrame?.public.phase === "guess");
     const guess =
       turn === rounds - 1 ? (target <= 80 ? target + 20 : target - 20) : target;
@@ -185,6 +190,14 @@ async function match(count) {
   );
   // Fresh games use a different axis before the entire deck is exhausted.
   await host.locator('[data-party="again"]').click();
+  for (const p of pages) {
+    if (p !== host) {
+      if (await p.locator(".close-sheet").count())
+        await p.locator(".close-sheet").click();
+      await p.locator('[data-action="open-live-game"]').click();
+    }
+  }
+  for (const p of pages) await p.locator('[data-party="ready"]').click();
   await m.waitForFunction(
     () =>
       window.testFrame?.public.phase === "clue" && !window.testFrame.finished,
@@ -194,6 +207,7 @@ async function match(count) {
       await m.evaluate(() => window.testFrame.public.axis.join("|")),
     ),
   );
+  await host.locator(".session-menu summary").click();
   await host.locator('[data-party="finish"]').click();
   await m.waitForFunction(
     () => window.testFrame?.finished && window.testFrame.public.cancelled,
