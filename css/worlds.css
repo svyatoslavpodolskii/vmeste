@@ -721,3 +721,11 @@
 .projector .letters-world p {
   font-size: 18px;
 }
+
+dialog > #ambient-player {
+  bottom: calc(12px + env(safe-area-inset-bottom));
+  z-index: 30;
+}
+dialog:has(> #ambient-player) > #sheet-content {
+  padding-bottom: calc(110px + env(safe-area-inset-bottom));
+}

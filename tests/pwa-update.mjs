@@ -166,7 +166,8 @@ try {
   );
   preserved(await snapshot(), before);
   assert.ok(!other.isClosed(), "old tab need not be closed");
-  await page.locator('[data-action="update-app"]').click();
+  await page.locator('.profile-tools [data-action="settings"]').click();
+  await page.locator('#sheet [data-action="update-app"]').click();
   await page
     .getByText("У вас актуальная версия приложения. Все данные на месте.")
     .waitFor();
@@ -175,7 +176,8 @@ try {
     .filter({ hasText: "Закрыть" })
     .click();
   await ctx.setOffline(true);
-  await page.locator('[data-action="update-app"]').click();
+  await page.locator('.profile-tools [data-action="settings"]').click();
+  await page.locator('#sheet [data-action="update-app"]').click();
   await page.getByText(/Для загрузки обновления нужен интернет/).waitFor();
   preserved(await snapshot(), before);
   await page.reload();

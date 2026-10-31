@@ -85,11 +85,12 @@ export function toast(message) {
 let returnFocus;
 export function sheet(html) {
   const d = document.querySelector("#sheet");
+  const wasOpen = d.open;
   if (!d.open) returnFocus = document.activeElement;
   document.querySelector("#sheet-content").innerHTML =
     `<div class="sheet-handle"></div><button class="icon-btn close-sheet" data-action="close" aria-label="Закрыть">${icon("close")}</button>${html}`;
   if (!d.open) d.showModal();
-  d.scrollTop = 0;
+  if (!wasOpen) d.scrollTop = 0;
   document.body.classList.add("modal-open");
 }
 export function closeSheet() {

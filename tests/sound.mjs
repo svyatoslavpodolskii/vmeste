@@ -52,6 +52,68 @@ try {
     await sound.stop();
     await sound.start();
     const contextReused = sound.context === sameContext;
+    sound.apply(
+      {
+        me: {
+          pads: [
+            [0, 1],
+            [0, 0],
+          ],
+        },
+      },
+      "me",
+      "soundgarden",
+    );
+    await sleep(600);
+    const lowCutoff = sound.nodes[0].filter.frequency.value;
+    sound.apply(
+      {
+        me: {
+          pads: [
+            [1, 0],
+            [1, 1],
+          ],
+        },
+      },
+      "me",
+      "soundgarden",
+    );
+    await sleep(600);
+    const highCutoff = sound.nodes[0].filter.frequency.value;
+    sound.apply(
+      {
+        me: {
+          pads: [
+            [0, 0],
+            [0, 0],
+          ],
+        },
+      },
+      "me",
+      "soundgarden",
+    );
+    await sleep(700);
+    const quietLayer = sound.nodes[1].gain.gain.value;
+    sound.apply(
+      {
+        me: {
+          pads: [
+            [0, 0],
+            [0, 0],
+          ],
+        },
+        partner: {
+          pads: [
+            [1, 1],
+            [0.3, 0.8],
+          ],
+        },
+      },
+      "me",
+      "soundgarden",
+    );
+    await sleep(700);
+    const partnerLayer = sound.nodes[1].gain.gain.value;
     sound.destroy();
     // Boundary follows the original tail's adjacent samples, rather than jumping
     // back to the beginning of an unrelated random buffer.
@@ -60,6 +122,10 @@ try {
     );
     const loop = seamlessLoop(raw, 20);
     return {
+      lowCutoff,
+      highCutoff,
+      quietLayer,
+      partnerLayer,
       firstEnergy,
       resumedEnergy,
       resumedGain,
@@ -74,6 +140,11 @@ try {
       original: Math.abs(raw[80] - raw[79]),
     };
   });
+  assert.ok(result.highCutoff > result.lowCutoff * 5, JSON.stringify(result));
+  assert.ok(
+    result.partnerLayer > result.quietLayer * 5,
+    JSON.stringify(result),
+  );
   assert.ok(result.firstEnergy > 0.00005, JSON.stringify(result));
   assert.ok(result.resumedEnergy > 0.00005, JSON.stringify(result));
   assert.ok(Math.abs(result.resumedGain - 0.216) < 0.005);

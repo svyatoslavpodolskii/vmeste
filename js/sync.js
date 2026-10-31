@@ -61,6 +61,55 @@ export function validRecord(table, r, roomId) {
       r.id === `${roomId}:${r.localUserId}`
     );
   if (table === "plans") {
+    if (r.worldEvent != null) {
+      const e = r.worldEvent;
+      if (!e || typeof e !== "object" || !Number.isFinite(e.at) || e.at < 0)
+        return false;
+      if (e.world === "gardenworld") {
+        if (
+          !["plant", "water"].includes(e.type) ||
+          typeof e.plot !== "string" ||
+          e.plot.length > 100
+        )
+          return false;
+        if (
+          e.type === "plant" &&
+          !["luna", "fern", "sun", "coral", "blue", "mint"].includes(e.species)
+        )
+          return false;
+      } else if (e.world === "atlasworld") {
+        if (
+          !["explore", "build", "chapter"].includes(e.type) ||
+          !Number.isInteger(e.chapter) ||
+          e.chapter < 0
+        )
+          return false;
+        if (
+          e.type === "explore" &&
+          (!Number.isInteger(e.tile) || e.tile < 0 || e.tile > 24)
+        )
+          return false;
+        if (e.type === "build" && ![0, 1, 2].includes(e.landmark)) return false;
+      } else if (e.world === "lettersworld") {
+        if (
+          !["question", "answer"].includes(e.type) ||
+          typeof e.text !== "string" ||
+          !e.text.trim() ||
+          e.text.length > (e.type === "question" ? 700 : 4000)
+        )
+          return false;
+        if (
+          e.target != null &&
+          (typeof e.target !== "string" || e.target.length > 100)
+        )
+          return false;
+        if (
+          e.type === "answer" &&
+          (typeof e.question !== "string" || e.question.length > 200)
+        )
+          return false;
+      } else return false;
+    }
     if (
       r.historyOwner != null &&
       (typeof r.historyOwner !== "string" ||

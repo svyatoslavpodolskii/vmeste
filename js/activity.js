@@ -30,12 +30,14 @@ export function unreadEvents(store) {
 }
 export function markRead(store, ids) {
   const read = readIds(store);
+  const before = read.size;
   for (const id of ids) read.add(id);
+  if (read.size === before) return;
   localStorage.setItem(
     `vmeste:read:${store.roomId}:${store.userId}`,
     JSON.stringify([...read]),
   );
-  window.dispatchEvent(new CustomEvent("vmeste-unread"));
+  globalThis.window?.dispatchEvent(new CustomEvent("vmeste-unread"));
 }
 export function activityLabel(e) {
   return e.type === "question"

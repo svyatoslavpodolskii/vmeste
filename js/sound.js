@@ -198,6 +198,28 @@ export class NatureSound {
     const { contributors, ownId, mode } = this.settings,
       ctx = this.context,
       t = ctx.currentTime;
+    if (touch) {
+      this.interactiveUntil = t + 0.9;
+      for (const node of this.nodes)
+        for (const param of [
+          node.gain.gain,
+          node.filter.frequency,
+          node.filter.Q,
+          node.source.playbackRate,
+          node.variant.playbackRate,
+          node.lfo.frequency,
+          node.depth.gain,
+          node.pan.pan,
+        ]) {
+          if (param.cancelAndHoldAtTime) param.cancelAndHoldAtTime(t);
+          else {
+            const value = param.value;
+            param.cancelScheduledValues(t);
+            param.setValueAtTime(value, t);
+          }
+        }
+    }
+    const responsive = touch || t < (this.interactiveUntil || 0);
     const entries = Object.entries(contributors),
       own = contributors[ownId] || {};
     const role = Math.max(
@@ -224,7 +246,7 @@ export class NatureSound {
       const node = this.nodes[i],
         index = (i + role) % 4;
       const partner =
-        remote.reduce((sum, w) => sum + w[(index + 2) % 4], 0) /
+        remote.reduce((sum, w, n) => sum + w[(index + 2 + n) % 4], 0) /
         Math.max(1, remote.length);
       const localWeight = i < 4 ? local[index] : harmony[index];
       const layer =
@@ -237,7 +259,7 @@ export class NatureSound {
           (layer + partner * 0.48) * (i === 4 ? 0.08 : i < 5 ? 0.4 : 0.3) * ebb,
         ),
         t,
-        touch ? 0.16 : 1.2,
+        responsive ? 0.16 : 1.2,
       );
       const openness =
         point[0] * 0.6 +
@@ -247,7 +269,7 @@ export class NatureSound {
       node.filter.frequency.setTargetAtTime(
         node.base * Math.pow(2, (openness - 0.5) * 3.8) * (1 + season * 0.5),
         t,
-        touch ? 0.18 : 2,
+        responsive ? 0.18 : 2,
       );
       node.filter.Q.setTargetAtTime(0.4 + tone[1] * 2.6, t, 0.35);
       node.source.playbackRate.setTargetAtTime(
@@ -285,7 +307,7 @@ export class NatureSound {
           ? 2 + point[1] * 10
           : 0.015 + point[1] * 0.55 + (i % 3) * 0.03 + memory[2] * 0.09,
         t,
-        touch ? 0.2 : 2,
+        responsive ? 0.2 : 2,
       );
       node.depth.gain.setTargetAtTime(0.08 + tone[1] * 0.55, t, 0.4);
       node.pan.pan.setTargetAtTime(

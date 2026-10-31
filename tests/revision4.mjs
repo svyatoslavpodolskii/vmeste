@@ -125,6 +125,18 @@ try {
   console.log(
     "PASS lobby, invitation, ready, cancel ready, simultaneous reveal",
   );
+  const previousPrompt = await m.locator(".party-prompt").textContent();
+  await a.locator('[data-party="reveal"]').click();
+  await m.waitForFunction(() => window.testFrame?.public.turn === 1);
+  const followingPrompt = await m.locator(".party-prompt").textContent();
+  await b.locator('[data-party="round-back"]').click();
+  await m.waitForFunction((t) => window.testFrame?.text === t, previousPrompt);
+  await a.locator('[data-party="reveal"]').click();
+  await m.waitForFunction((t) => window.testFrame?.text === t, followingPrompt);
+  console.log(
+    "PASS previous round restores both answers and exact following prompt",
+  );
+
   await game("choice");
   await a.locator('[data-party="deck-choice"][data-value="0"]').click();
   assert.ok(!(await m.locator("body").innerText()).includes("Левая дверь"));

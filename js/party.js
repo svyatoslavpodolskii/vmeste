@@ -234,7 +234,7 @@ export function partyScreen(f, screen = false) {
       : `<div class="poem-wait"><span>✍️</span><p>${p.ready || 0} / ${p.total || 0} слов в нашей истории</p></div>`;
   else if (["meditation", "soundgarden"].includes(f.kind)) body = soundWorld(f);
   else body = "";
-  return `<section class="party-public party-${esc(f.kind)}"><h2>${esc(f.title)}</h2><p class="party-prompt">${esc(f.text)}</p>${body}<div class="party-progress">${esc(f.progress || "")}${!["meditation", "soundgarden", "word", "poem", "museum", "frequency"].includes(f.kind) ? timer(f) : ""}</div></section>`;
+  return `<section class="party-public party-${esc(f.kind)}"><h2>${esc(f.title)}</h2>${deckKinds.includes(f.kind) ? "" : `<p class="party-prompt">${esc(f.text)}</p>`}${body}<div class="party-progress">${esc(f.progress || "")}${f.kind === "draw" ? timer(f) : ""}</div></section>`;
 }
 export class PartyGames {
   constructor(options) {
@@ -309,7 +309,12 @@ export class PartyGames {
       this.opened = false;
       for (const stop of this.soundCleanup || []) stop();
       this.soundCleanup = [];
+      this.player();
     });
+    new MutationObserver(() => this.player()).observe(
+      document.querySelector("#sheet"),
+      { attributes: true, attributeFilter: ["open"] },
+    );
     this.ticker = setInterval(() => {
       if (this.hosting && this.state?.stage === "lobby" && this.beginIfReady())
         this.broadcast();
@@ -583,6 +588,7 @@ export class PartyGames {
       progress = "";
     if (deckKinds.includes(s.kind)) {
       Object.assign(p, deckPublic(s));
+      p.turn = s.deck.index;
       text = p.card || "Выберите карточку";
     }
     if (s.kind === "museum") {
@@ -827,7 +833,10 @@ export class PartyGames {
     const s = this.state;
     if (!s || s.stage === "lobby") return;
     for (const u of s.players) {
-      let payload = { round: s.round, turn: s.turn || 0 };
+      let payload = {
+        round: s.round,
+        turn: deckKinds.includes(s.kind) ? s.deck.index : s.turn || 0,
+      };
       if ([...expeditionKinds, "race", "beacon"].includes(s.kind))
         Object.assign(payload, expeditionSecret(s, u.id));
       if (
@@ -851,7 +860,7 @@ export class PartyGames {
         payload.canVote = (s.voters || []).includes(u.id);
       }
       if (u.id === this.userId)
-        this.secrets.set(s.round + ":" + (s.turn || 0), payload);
+        this.secrets.set(s.round + ":" + payload.turn, payload);
       else this.peer?.sendPrivate(u.id, payload);
     }
   }
@@ -1380,6 +1389,7 @@ export class PartyGames {
     this.input({ action: "join" });
     this.opened = true;
     this.render(true);
+    document.querySelector("#sheet").scrollTop = 0;
   }
   render(force = false) {
     const f = this.frame;
@@ -1678,6 +1688,8 @@ export class PartyGames {
       document.body.classList.remove("has-player");
       return;
     }
+    const parent = document.querySelector("#sheet[open]") || document.body;
+    if (el && el.parentElement !== parent) parent.append(el);
     const playerKey = this.audioFrame?.round + ":" + this.audio.started;
     if (el?.dataset.key === playerKey) return;
     if (!el) {
@@ -1685,7 +1697,7 @@ export class PartyGames {
       el.id = "ambient-player";
       el.className = "ambient-player";
       el.setAttribute("aria-label", "Фоновая музыка");
-      document.body.append(el);
+      parent.append(el);
     }
     el.dataset.key = playerKey;
     el.innerHTML = `<button data-party="player-open" aria-label="Открыть звуковой пульт"><span class="mini-wave ${this.audio.started ? "playing" : ""}"><i></i><i></i><i></i></span><span>${esc(partyTitles[this.audioFrame?.kind] || "Ваш звуковой пейзаж")}<small>${this.audio.started ? "Сейчас звучит" : "На паузе"}</small></span></button><button data-party="sound" aria-label="${this.audio.started ? "Пауза" : "Продолжить музыку"}">${icon(this.audio.started ? "pause" : "play")}</button><button data-party="player-stop" aria-label="Выключить музыку">${icon("close")}</button>`;
@@ -1906,9 +1918,9 @@ export class PartyGames {
         }
         this.player();
         if (!el) return;
-        el.textContent = this.audio?.started
-          ? "Выключить звук здесь"
-          : "Включить звук на этом устройстве";
+        el.innerHTML =
+          icon(this.audio?.started ? "pause" : "play") +
+          (this.audio?.started ? " Пауза" : " Продолжить");
       }
       if (action === "again" && this.hosting) this.start(this.frame.kind);
       if (action === "finish" && this.hosting) await this.finish();

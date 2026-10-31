@@ -989,3 +989,20 @@
     height: 200px;
   }
 }
+
+#party-live .party-meditation,
+#party-live .party-soundgarden {
+  padding: 4px 0;
+}
+#party-live .party-meditation .party-prompt,
+#party-live .party-soundgarden .party-prompt {
+  display: none;
+}
+#party-live .party-meditation .audio-visual,
+#party-live .party-soundgarden .audio-visual {
+  height: 125px;
+}
+#party-live .party-meditation .party-progress,
+#party-live .party-soundgarden .party-progress {
+  display: none;
+}

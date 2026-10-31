@@ -835,7 +835,7 @@ async function action(a, el) {
     case "edit-profile": {
       const me = store.users.find((u) => u.localUserId === userId);
       sheet(
-        `<h2>Ваш образ</h2><form id="profile-form"><label>Имя<input name="name" maxlength="60" value="${esc(me?.displayName || "")}" required></label>${avatarPicker(me?.avatar || "🌷")}<button class="btn primary wide" type="submit">Сохранить</button></form>`,
+        `<h2>Ваш образ</h2><form id="profile-edit-form"><label>Имя<input name="name" maxlength="60" value="${esc(me?.displayName || "")}" required></label>${avatarPicker(me?.avatar || "🌷")}<button class="btn primary wide" type="submit">Сохранить</button></form>`,
       );
       break;
     }
@@ -1412,6 +1412,7 @@ document.addEventListener("submit", async (e) => {
         render();
         break;
       }
+      case "profile-edit-form":
       case "profile-form":
         if (!fields.name.trim()) throw Error("Напишите ваше имя");
         await store.save("users", {
@@ -1420,6 +1421,7 @@ document.addEventListener("submit", async (e) => {
           displayName: fields.name.trim(),
           avatar: fields.avatar,
         });
+        if (form.id === "profile-edit-form") closeSheet();
         toast("Сохранено");
         break;
       case "plan-form":

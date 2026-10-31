@@ -41,7 +41,7 @@ export function gardenState(store, now = Date.now()) {
     ).length;
     p.stage = Math.min(
       4,
-      1 + Math.floor(Math.max(0, now - p.at) / 900000 + p.waters * 0.65),
+      1 + Math.floor(Math.max(0, now - p.at) / 900000) + Math.min(2, p.waters),
     );
     p.bloom = p.stage === 4;
     p.color = species.find((s) => s[0] === p.species)[2];
@@ -221,6 +221,7 @@ export class WorldGames {
     this.lettersView = "inbox";
     this.opened = true;
     this.render();
+    document.querySelector("#sheet").scrollTop = 0;
   }
   render() {
     if (!this.store || !this.kind || !this.opened) return;

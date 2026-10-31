@@ -153,7 +153,10 @@
   };
   window.vmesteUpdates = { check };
   document.addEventListener("click", (event) => {
-    if (event.target.closest('[data-action="update-app"]')) check();
+    if (event.target.closest('[data-action="update-app"]')) {
+      document.querySelector("#sheet[open]")?.close();
+      check();
+    }
   });
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible")
