@@ -90,6 +90,57 @@ export function validRecord(table, r, roomId) {
         )
           return false;
         if (e.type === "build" && ![0, 1, 2].includes(e.landmark)) return false;
+      } else if (e.world === "wordworld") {
+        if (!["pack", "turn-answer", "reveal", "request"].includes(e.type))
+          return false;
+        if (e.type === "pack") {
+          if (
+            !Number.isInteger(e.number) ||
+            e.number < 1 ||
+            !Array.isArray(e.players) ||
+            e.players.length < 2 ||
+            e.players.length > 10 ||
+            e.players.some((id) => typeof id !== "string" || id.length > 100) ||
+            !Array.isArray(e.cards) ||
+            e.cards.length < 1 ||
+            e.cards.length > 4 ||
+            e.cards.some(
+              (c) =>
+                typeof c.key !== "string" ||
+                c.key.length > 100 ||
+                typeof c.text !== "string" ||
+                c.text.length > 700,
+            )
+          )
+            return false;
+        } else if (e.type !== "request") {
+          if (
+            typeof e.pack !== "string" ||
+            e.pack.length > 200 ||
+            !Number.isInteger(e.index) ||
+            e.index < 0 ||
+            e.index > 3 ||
+            typeof e.text !== "string" ||
+            e.text.length > 1500
+          )
+            return false;
+          if (e.type === "turn-answer" && typeof e.ready !== "boolean")
+            return false;
+          if (
+            e.type === "reveal" &&
+            (!Array.isArray(e.answers) ||
+              e.answers.length < 2 ||
+              e.answers.length > 10 ||
+              e.answers.some(
+                (a) =>
+                  typeof a.author !== "string" ||
+                  a.author.length > 100 ||
+                  typeof a.text !== "string" ||
+                  a.text.length > 1500,
+              ))
+          )
+            return false;
+        }
       } else if (e.world === "lettersworld") {
         if (
           !["question", "answer"].includes(e.type) ||

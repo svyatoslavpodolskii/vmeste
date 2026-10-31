@@ -17,6 +17,7 @@ export function readIds(store) {
   }
 }
 export function relevant(store, event) {
+  if (event.world === "wordworld") return event.type === "reveal";
   if (event.author === store.userId) return false;
   if (event.world === "lettersworld")
     return !event.target || event.target === store.userId;
@@ -40,6 +41,7 @@ export function markRead(store, ids) {
   globalThis.window?.dispatchEvent(new CustomEvent("vmeste-unread"));
 }
 export function activityLabel(e) {
+  if (e.world === "wordworld") return "Созвучия: общие ответы открыты";
   return e.type === "question"
     ? "Новый вопрос"
     : e.type === "answer"
@@ -55,7 +57,11 @@ export function activityLabel(e) {
               : "Продолжение вашей истории";
 }
 export function activitySheet(store, world = "") {
-  const all = activityEvents(store).filter((e) => !world || e.world === world),
+  const all = activityEvents(store).filter(
+      (e) =>
+        (!world || e.world === world) &&
+        (e.world !== "wordworld" || e.type === "reveal"),
+    ),
     read = readIds(store);
-  return `<div class="activity-head"><span class="eyebrow">ВАШЕ ОБЩЕЕ ВРЕМЯ</span><h2>${world === "lettersworld" ? "История писем" : "Что нового"}</h2><p>Сначала последние события. Читайте, когда удобно.</p></div>${world ? `<button class="btn text" data-world="letters-inbox">${icon("back")} К письмам</button>` : ""}<div class="activity-toolbar"><button class="btn text" data-action="activity-read-all" data-world-filter="${esc(world)}">Прочитать всё</button></div><div class="activity-list">${all.map((e) => `<button class="activity-item ${!read.has(e.id) && relevant(store, e) ? "unread" : ""}" data-action="activity-open" data-id="${esc(e.world)}" data-event="${esc(e.id)}"><span class="activity-symbol">${icon(e.world === "lettersworld" ? "letter" : e.world === "gardenworld" ? "plant" : "map")}</span><span><strong>${e.author === store.userId ? (e.type === "question" ? "Вы оставили вопрос" : e.type === "answer" ? "Вы ответили" : activityLabel(e)) : activityLabel(e)}</strong><p>${esc((e.text || "").slice(0, 100) || store.users.find((u) => u.localUserId === e.author)?.displayName || "Ваш человек")}</p><small>${new Date(e.at).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</small></span><i></i></button>`).join("") || '<div class="empty"><h3>Пока здесь тихо</h3><p>Вопросы, ответы и маленькие открытия будут собираться здесь.</p></div>'}</div>`;
+  return `<div class="activity-head"><span class="eyebrow">ВАШЕ ОБЩЕЕ ВРЕМЯ</span><h2>${world === "lettersworld" ? "История писем" : world === "wordworld" ? "История созвучий" : "Что нового"}</h2><p>Сначала последние события. Читайте, когда удобно.</p></div>${world === "lettersworld" ? `<button class="btn text" data-world="letters-inbox">${icon("back")} К письмам</button>` : world === "wordworld" ? `<button class="btn text" data-turn="back">${icon("back")} К вопросам</button>` : ""}<div class="activity-toolbar"><button class="btn text" data-action="activity-read-all" data-world-filter="${esc(world)}">Прочитать всё</button></div><div class="activity-list">${all.map((e) => `<button class="activity-item ${!read.has(e.id) && relevant(store, e) ? "unread" : ""}" data-action="activity-open" data-id="${esc(e.world)}" data-event="${esc(e.id)}"><span class="activity-symbol">${icon(e.world === "lettersworld" ? "letter" : e.world === "gardenworld" ? "plant" : "map")}</span><span><strong>${e.author === store.userId ? (e.type === "question" ? "Вы оставили вопрос" : e.type === "answer" ? "Вы ответили" : activityLabel(e)) : activityLabel(e)}</strong><p>${esc((e.text || "").slice(0, 100) || store.users.find((u) => u.localUserId === e.author)?.displayName || "Ваш человек")}</p><small>${new Date(e.at).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</small></span><i></i></button>`).join("") || '<div class="empty"><h3>Пока здесь тихо</h3><p>Вопросы, ответы и маленькие открытия будут собираться здесь.</p></div>'}</div>`;
 }

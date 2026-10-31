@@ -1,4 +1,5 @@
 import { worldKinds, worldScreen } from "./worlds.js";
+import { TURN_WORLD, turnScreen } from "./turn-games.js";
 import {
   expeditionKinds,
   expeditionTitles,
@@ -196,6 +197,7 @@ const timer = (f) =>
 export function partyScreen(f, screen = false) {
   if (!f) return "<p>Выберите игру на телефоне.</p>";
   if (worldKinds.includes(f.kind)) return worldScreen(f);
+  if (f.kind === TURN_WORLD) return turnScreen(f);
   const p = f.public || {},
     players = Array.isArray(p.players) ? p.players.slice(0, 10) : [];
   let body = "";
@@ -307,6 +309,11 @@ export class PartyGames {
     });
     document.querySelector("#sheet").addEventListener("close", () => {
       this.opened = false;
+      if (
+        this.frame &&
+        !["soundgarden", "meditation"].includes(this.frame.kind)
+      )
+        this.input({ action: "leave" });
       for (const stop of this.soundCleanup || []) stop();
       this.soundCleanup = [];
       this.player();
@@ -556,6 +563,8 @@ export class PartyGames {
         text: "Ждём готовности участников",
         progress: "",
         stage: "lobby",
+        finished: !!s.finished,
+        invitedAt: s.invitedAt || 0,
         createdAt: s.createdAt,
         revision: s.revision,
         public: {
@@ -737,6 +746,7 @@ export class PartyGames {
       this.audioFrame = this.frame;
     this.peer?.publishGame(this.frame);
     if (!this.backgroundDispatch) this.options.onFrame?.(this.frame);
+    else this.options.onInvite?.(this.frame);
     if (this.opened) this.render();
     this.player();
     if (this.audio?.started && this.audioFrame)
@@ -766,7 +776,6 @@ export class PartyGames {
       this.options.onInvite?.(frame);
       if (!this.invited.has(frame.round)) {
         this.invited.add(frame.round);
-        if (!frame.finished) toast("Доступна игра: " + frame.title);
       }
       return;
     }
@@ -815,7 +824,7 @@ export class PartyGames {
         sheet(
           `<div class="game-invitation"><span class="eyebrow">ВАС ПРИГЛАШАЮТ</span><h2>${esc(frame.title)}</h2><p>Ваш человек уже ждёт за общим столом.</p><button class="btn primary wide" data-party="join">Присоединиться</button></div>`,
         );
-      } else toast("Приглашение: " + frame.title);
+      }
     }
     if (this.opened && partyKinds.includes(frame.kind))
       this.render(previous?.round !== frame.round);
@@ -880,6 +889,16 @@ export class PartyGames {
     this.state = table.state;
     this.options.onFrame?.(this.frame);
     this.open();
+  }
+  endEmpty(kind) {
+    const table = this.tables.get(kind);
+    if (table?.state && !table.state.joined.length) {
+      this.command(this.userId, {
+        round: table.frame.round,
+        action: "end-empty",
+      });
+      toast("Игра завершена. Приглашение закрыто");
+    }
   }
   command(sender, input) {
     if (input?.round === this.frame?.round)
@@ -948,6 +967,21 @@ export class PartyGames {
         };
       this.broadcast();
       if (s.stage === "running") this.privateInstructions();
+      return;
+    }
+    if (
+      input.action === "end-empty" &&
+      sender === this.userId &&
+      !s.joined.length
+    ) {
+      this.finish();
+      return;
+    }
+    if (input.action === "leave") {
+      if (!s.joined.includes(sender)) return;
+      s.joined = s.joined.filter((id) => id !== sender);
+      s.readyPlayers = (s.readyPlayers || []).filter((id) => id !== sender);
+      this.broadcast();
       return;
     }
     if (!s.players.some((u) => u.id === sender) || !s.joined.includes(sender))
@@ -1399,6 +1433,8 @@ export class PartyGames {
       ":" +
       f.stage +
       ":" +
+      (f.invitedAt || 0) +
+      ":" +
       (f.public.index ?? 0) +
       ":" +
       !!f.public.selected +
@@ -1478,7 +1514,7 @@ export class PartyGames {
       secret = this.secrets.get(f.round + ":" + (p.turn || 0)) || {};
     let html = "";
     if (f.stage === "lobby") {
-      html = `<button class="btn primary wide" data-party="ready">${p.readyPlayers?.includes(this.userId) ? "Отменить готовность" : "Готов"}</button><p class="muted center">${p.joined?.length || 1} за столом · начало после готовности всех</p>${this.hosting && ["soundgarden", "meditation"].includes(f.kind) ? '<button class="btn lavender wide" data-party="solo">Слушать одному · все пульты</button>' : ""}${this.hosting ? '<button class="btn text wide" data-party="cancel-lobby">Отменить приглашение</button>' : ""}`;
+      html = `<button class="btn primary wide" data-party="ready">${p.readyPlayers?.includes(this.userId) ? "Отменить готовность" : "Готов"}</button><p class="muted center">${p.joined?.length || 1} за столом · начало после готовности всех</p>${this.hosting && ["soundgarden", "meditation"].includes(f.kind) ? '<button class="btn lavender wide" data-party="solo">Слушать одному · все пульты</button>' : ""}${this.hosting ? `<button class="btn soft wide" data-party="invite" ${f.invitedAt ? "disabled" : ""}>${f.invitedAt ? "Приглашение активно" : "Отправить приглашение"}</button><p class="fine center">Приглашение останется в играх до закрытия лобби и не прервёт другую игру.</p><button class="btn text wide" data-party="cancel-lobby">Закрыть лобби</button>` : ""}`;
     } else if ([...expeditionKinds, "race", "beacon"].includes(f.kind))
       html = expeditionControls(f, this.userId, secret);
     else if (deckKinds.includes(f.kind))
@@ -1828,8 +1864,16 @@ export class PartyGames {
         this.input({ action });
         return;
       }
-      if (action === "cancel-lobby") {
+      if (action === "invite" && this.hosting && !this.state.invitedAt) {
+        this.state.invitedAt = Date.now();
+        this.broadcast();
+        toast("Приглашение активно — ваш человек увидит его в играх");
+        return;
+      }
+      if (action === "cancel-lobby" && this.hosting) {
         await this.finish();
+        closeSheet();
+        toast("Лобби закрыто. Приглашение больше не активно");
         return;
       }
       if (

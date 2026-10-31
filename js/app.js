@@ -5,6 +5,7 @@ import {
   markRead,
 } from "./activity.js";
 import { WorldGames, worldKinds } from "./worlds.js";
+import { TurnGames, TURN_WORLD } from "./turn-games.js";
 import { categories } from "../data/ideas.js";
 import { roomMenu, settingsHome, backupSettings } from "./preferences.js";
 import { PartyGames, partyKinds, partyScreen } from "./party.js";
@@ -102,6 +103,7 @@ const state = {
   draft: [],
 };
 const worlds = new WorldGames({ store: () => store, peer: () => peer });
+const turns = new TurnGames({ store: () => store, peer: () => peer });
 const party = new PartyGames({
   store: () => store,
   peer: () => peer,
@@ -179,7 +181,7 @@ function render() {
     .slice(-1)
     .map(
       (f) =>
-        `<aside class="live-game-banner"><span>${esc(f.title)}</span>${btn(f.public?.joined?.includes(userId) ? "Вернуться" : "Присоединиться", "open-live-game", "soft", `data-id="${esc(f.kind)}"`)}</aside>`,
+        `<aside class="live-game-banner"><span>${esc(f.title)}</span>${btn(f.public?.joined?.includes(userId) ? "Вернуться" : "Присоединиться", "open-live-game", "soft", `data-id="${esc(f.kind)}"`)}${f.controller === userId && f.public?.joined?.length === 0 ? btn("Завершить", "end-empty-game", "text", `data-id="${esc(f.kind)}"`) : ""}</aside>`,
     )
     .join(
       "",
@@ -377,6 +379,10 @@ async function enter(room, name, avatar = "🌷", creator = false, options = {})
   store.addEventListener("change", (e) => {
     if (e.detail.entries.some((e) => e.record.worldEvent)) {
       worlds.changed(e.detail.entries);
+      if (
+        e.detail.entries.some((e) => e.record.worldEvent?.world === TURN_WORLD)
+      )
+        turns.changed();
       updateUnread();
     }
     const newMatches = store.matches.filter((i) => !matchIds.has(i.id));
@@ -474,6 +480,11 @@ function gamePool(kind) {
 let gameTimer,
   historyQueue = Promise.resolve();
 function startGame(kind) {
+  if (kind === "word") {
+    worlds.opened = false;
+    turns.open();
+    return;
+  }
   if (worldKinds.includes(kind)) {
     worlds.open(kind);
     return;
@@ -825,7 +836,8 @@ async function action(a, el) {
       const event = activityEvents(store).find(
         (e) => e.id === el.dataset.event,
       );
-      if (event) worlds.openEvent(event);
+      if (event?.world === TURN_WORLD) turns.open(event);
+      else if (event) worlds.openEvent(event);
       break;
     }
     case "settings":
@@ -1180,6 +1192,10 @@ async function action(a, el) {
     case "open-live-game":
       if (id) party.openTable(id);
       else party.open();
+      break;
+    case "end-empty-game":
+      party.endEmpty(id);
+      render();
       break;
     case "screen-game":
       state.screenKind = id;

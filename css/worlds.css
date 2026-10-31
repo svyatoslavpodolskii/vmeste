@@ -692,6 +692,34 @@
   border-radius: 20px;
   padding: 4px 9px;
 }
+.turn-scene {
+  background:
+    radial-gradient(ellipse at top left, #fff7df, transparent),
+    linear-gradient(145deg, #dcebea, #e7def0);
+  color: #526e77;
+}
+.turn-scene-question {
+  font-size: clamp(22px, 4vw, 36px) !important;
+  line-height: 1.35;
+}
+.turn-revealed {
+  display: grid;
+  gap: 12px;
+  margin-top: 24px;
+}
+.turn-revealed article {
+  padding: 20px;
+  border-radius: 20px;
+  background: #ffffffa8;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.turn-revealed p {
+  white-space: pre-wrap;
+}
+.turn-panel textarea {
+  min-height: 140px;
+}
 .question-letter {
   margin: 20px 0;
   padding: 24px 19px;

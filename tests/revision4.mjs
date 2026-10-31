@@ -96,6 +96,12 @@ try {
       await a.locator('[data-party="ready"]').textContent(),
       "Готов",
     );
+    await a.locator('[data-party="invite"]').click();
+    assert.equal(
+      await a.locator('[data-party="invite"]').textContent(),
+      "Приглашение активно",
+    );
+    assert.ok(await a.locator('[data-party="invite"]').isDisabled());
     if (await b.locator('[data-party="join"]').count())
       await b.locator('[data-party="join"]').click();
     else {
@@ -111,32 +117,7 @@ try {
       id,
     );
   }
-  await game("word");
-  await a.locator("#party-answer-form textarea").fill("Ответ А");
-  await a.locator("#party-answer-form button").click();
-  await a.locator('[data-party="not-ready"]').waitFor();
-  assert.ok(!(await m.locator("body").innerText()).includes("Ответ А"));
-  await a.locator('[data-party="not-ready"]').click();
-  await a.locator("#party-answer-form textarea").fill("Изменённый ответ");
-  await a.locator("#party-answer-form button").click();
-  await b.locator("#party-answer-form textarea").fill("Ответ Б");
-  await b.locator("#party-answer-form button").click();
-  await m.getByText("Изменённый ответ", { exact: true }).waitFor();
-  console.log(
-    "PASS lobby, invitation, ready, cancel ready, simultaneous reveal",
-  );
-  const previousPrompt = await m.locator(".party-prompt").textContent();
-  await a.locator('[data-party="reveal"]').click();
-  await m.waitForFunction(() => window.testFrame?.public.turn === 1);
-  const followingPrompt = await m.locator(".party-prompt").textContent();
-  await b.locator('[data-party="round-back"]').click();
-  await m.waitForFunction((t) => window.testFrame?.text === t, previousPrompt);
-  await a.locator('[data-party="reveal"]').click();
-  await m.waitForFunction((t) => window.testFrame?.text === t, followingPrompt);
-  console.log(
-    "PASS previous round restores both answers and exact following prompt",
-  );
-
+  // Asynchronous word batches are verified by tests/turns-live.mjs.
   await game("choice");
   await a.locator('[data-party="deck-choice"][data-value="0"]').click();
   assert.ok(!(await m.locator("body").innerText()).includes("Левая дверь"));
@@ -285,6 +266,22 @@ try {
   assert.equal(await m.evaluate(() => window.testFrame.round), round);
   console.log(
     "PASS host reload restores existing table rather than creating another",
+  );
+  await close(a);
+  await close(b);
+  await nav(a, "games");
+  await a.locator('[data-action="play"][data-id="beacon"]').click();
+  await a.locator('[data-party="cancel-lobby"]').click();
+  assert.equal(await a.locator("#sheet[open]").count(), 0);
+  await a.locator('[data-action="play"][data-id="beacon"]').click();
+  await close(a);
+  await a.locator('[data-action="end-empty-game"][data-id="beacon"]').click();
+  assert.equal(
+    await a.locator('.live-game-banner [data-id="beacon"]').count(),
+    0,
+  );
+  console.log(
+    "PASS explicit lobby closure and ending an empty table remove active invitations",
   );
   assert.deepEqual(errors, []);
   console.log("PASS no uncaught JavaScript errors");

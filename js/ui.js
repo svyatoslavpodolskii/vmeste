@@ -155,7 +155,7 @@ export function avatarPicker(current = "🌷") {
 }
 export function visualPicker(idea = {}) {
   const image = idea.image || "./assets/magic.svg",
-    isImage = !!idea.image;
+    isImage = !!idea.image || !idea.id;
   return `<fieldset class="visual-picker"><legend>Оформление идеи</legend><div class="visual-modes"><label><input type="radio" name="visualMode" value="illustration" ${isImage ? "checked" : ""}><span>🖼️ Иллюстрация</span></label><label><input type="radio" name="visualMode" value="emoji" ${!isImage ? "checked" : ""}><span>✨ Эмодзи</span></label></div><div class="illustration-gallery">${illustrations.map(([name, label]) => `<label title="${label}"><input type="radio" name="artwork" value="./assets/${name}.svg" ${image === `./assets/${name}.svg` ? "checked" : ""}><img src="./assets/${name}.svg" alt="${label}"><span>${label}</span></label>`).join("")}${image.startsWith("data:") ? `<label><input type="radio" name="artwork" value="${esc(image)}" checked><img src="${esc(image)}" alt="Прежнее изображение"><span>Прежнее</span></label>` : ""}</div><div class="emoji-gallery idea-emojis">${[...new Set([idea.icon || "✨", ...avatars])].map((e) => `<label title="${esc(e)}"><input type="radio" name="icon" value="${esc(e)}" ${e === (idea.icon || "✨") ? "checked" : ""}><span>${e}</span></label>`).join("")}</div></fieldset>`;
 }
 export function suggestion(idea, store) {

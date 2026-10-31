@@ -276,7 +276,7 @@ export class WorldGames {
       (e) => e.world === "lettersworld",
     );
     const newAnswers = unread.filter((e) => e.type === "answer").length;
-    return `${unread.length ? `<button class="letters-digest" data-action="activity" data-world-filter="lettersworld"><span class="activity-symbol">${icon("letter")}</span><span><strong>???? ????????????? ??????</strong><small>${newAnswers ? `????? ???????: ${newAnswers} ? ` : ""}????? ???????: ${unread.length}</small></span><b>${unread.length}</b></button>` : ""}<div class="letters-toolbar"><button class="btn primary" data-world="letters-compose">${icon("plus")} Спросить</button><button class="btn soft" data-action="activity">${icon("clock")} Вся история</button></div><div class="letter-inbox">${
+    return `${unread.length ? `<button class="letters-digest" data-action="activity" data-world-filter="lettersworld"><span class="activity-symbol">${icon("letter")}</span><span><strong>Есть непрочитанные письма</strong><small>${newAnswers ? `Новых ответов: ${newAnswers} · ` : ""}Всего событий: ${unread.length}</small></span><b>${unread.length}</b></button>` : ""}<div class="letters-toolbar"><button class="btn primary" data-world="letters-compose">${icon("plus")} Спросить</button><button class="btn soft" data-action="activity" data-world-filter="lettersworld">${icon("clock")} Вся история</button></div><div class="letter-inbox">${
       questions
         .map((q) => {
           const answers = state.answers.filter((a) => a.question === q.id),
