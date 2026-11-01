@@ -1,11 +1,11 @@
 {
   "name": "vmeste",
-  "version": "4.6.0",
+  "version": "4.7.0",
   "private": true,
   "type": "module",
   "scripts": {
     "start": "node scripts/serve.mjs",
-    "test": "node tests/core.test.mjs && node tests/auth.test.mjs && node tests/games4.test.mjs && node tests/worlds.test.mjs && node tests/turns.test.mjs && node tests/circuit.test.mjs && node tests/session-protocol.test.mjs && node tests/beacon.test.mjs && node tests/composition.test.mjs && node tests/boot.test.mjs && node tests/repairs.test.mjs && node tests/beacon-help.test.mjs",
+    "test": "node tests/core.test.mjs && node tests/auth.test.mjs && node tests/games4.test.mjs && node tests/worlds.test.mjs && node tests/turns.test.mjs && node tests/circuit.test.mjs && node tests/session-protocol.test.mjs && node tests/beacon.test.mjs && node tests/composition.test.mjs && node tests/boot.test.mjs && node tests/repairs.test.mjs && node tests/beacon-help.test.mjs && node tests/notifications.test.mjs",
     "test:browser": "node tests/browser.mjs",
     "test:rooms": "node tests/rooms-live.mjs",
     "test:party": "node tests/revision4.mjs",
@@ -25,7 +25,8 @@
     "test:repairs": "node tests/boot-live.mjs && node tests/repairs-live.mjs",
     "test:classification": "node tests/classification-live.mjs",
     "test:atlas": "node tests/atlas-live.mjs",
-    "test:poetry": "node tests/poetry-live.mjs"
+    "test:poetry": "node tests/poetry-live.mjs",
+    "test:notifications": "node tests/notifications-live.mjs"
   },
   "devDependencies": {
     "fake-indexeddb": "6.2.4",

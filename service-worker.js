@@ -1,10 +1,10 @@
 // Cache version follows package.json. Cache is scoped to this installation path.
-const CACHE = "vmeste-4.6.0-" + self.registration.scope;
+const CACHE = "vmeste-4.7.0-" + self.registration.scope;
 const ASSETS = [
   "./",
   "./index.html",
   "./manifest.json",
-  "./js/update.js?v=4.6.0",
+  "./js/update.js?v=4.7.0",
   "./css/beacon.css",
   "./css/circuit.css",
   "./css/immersive.css",
@@ -30,6 +30,7 @@ const ASSETS = [
   "./js/idea-classification.js",
   "./js/moments.js",
   "./js/mood.js",
+  "./js/notifications.js",
   "./js/party.js",
   "./js/peer.js",
   "./js/plans.js",
@@ -121,6 +122,35 @@ self.addEventListener("activate", (event) => {
         ),
       )
       .then(() => self.clients.claim()),
+  );
+});
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  event.waitUntil(
+    (async () => {
+      const data = event.notification.data || {},
+        tab = ["matches", "games"].includes(data.tab) ? data.tab : "matches";
+      const url = new URL("./", self.registration.scope);
+      if (typeof data.room === "string")
+        url.searchParams.set("room", data.room);
+      url.hash = tab;
+      const windows = await self.clients.matchAll({
+        type: "window",
+        includeUncontrolled: true,
+      });
+      const client = windows.find((c) => {
+        const u = new URL(c.url);
+        return (
+          u.origin === url.origin &&
+          u.pathname.startsWith(new URL(self.registration.scope).pathname) &&
+          u.searchParams.get("room") === data.room
+        );
+      });
+      if (client) {
+        await client.focus();
+        client.postMessage({ type: "OPEN_ROOM_TAB", room: data.room, tab });
+      } else await self.clients.openWindow(url.href);
+    })(),
   );
 });
 self.addEventListener("fetch", (event) => {

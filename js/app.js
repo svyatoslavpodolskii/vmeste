@@ -29,6 +29,12 @@ import { selectGameScreen } from "./game-protocol.js";
 import { NatureSound } from "./sound.js";
 import { MoodJournal } from "./mood.js";
 import {
+  notificationSettings,
+  enableNotifications,
+  disableNotifications,
+  notifyRoom,
+} from "./notifications.js";
+import {
   esc,
   icon,
   btn,
@@ -191,6 +197,20 @@ const moodJournal = new MoodJournal(() => store);
 const turns = new TurnGames({ store: () => store, peer: () => peer });
 const frameLayouts = new Map();
 function rememberGameFrame(frame) {
+  if (
+    store &&
+    frame.controller !== store.userId &&
+    !frame.finished &&
+    !frame.ownerOffline &&
+    frame.stage === "lobby" &&
+    frame.invitedAt
+  )
+    notifyRoom(store, {
+      key: "invite:" + frame.round + ":" + frame.invitedAt,
+      title: "Вас зовут играть",
+      body: frame.title,
+      tab: "games",
+    });
   state.invites ||= {};
   state.invites[frame.kind] = frame;
   const layout = JSON.stringify([
@@ -515,6 +535,25 @@ async function enter(room, name, avatar = "🌷", creator = false, options = {})
     const newMatches = store.matches.filter((i) => !matchIds.has(i.id));
     matchIds = new Set(store.matches.map((i) => i.id));
     if (newMatches.length) {
+      if (!e.detail.local)
+        notifyRoom(store, {
+          key:
+            "matches:" +
+            cardKey(
+              newMatches
+                .map((idea) => idea.id)
+                .sort()
+                .join(","),
+            ),
+          title:
+            newMatches.length === 1
+              ? "У вас новое совпадение ♥"
+              : "Новые общие идеи ♥",
+          body:
+            newMatches.length === 1
+              ? newMatches[0].title
+              : `${newMatches.length} идей понравились ${store.authCapacity > 2 ? "нескольким из вас" : "вам обоим"}. Например, «${newMatches[0].title}».`,
+        });
       updateUnread();
       toast("Совпало! " + newMatches[0].title);
       document.querySelector("#toast")?.classList.add("match-toast");
@@ -973,6 +1012,17 @@ async function action(a, el) {
     }
     case "settings":
       sheet(settingsHome());
+      break;
+    case "notifications":
+      sheet(notificationSettings());
+      break;
+    case "notifications-on":
+      await enableNotifications();
+      sheet(notificationSettings());
+      break;
+    case "notifications-off":
+      disableNotifications();
+      sheet(notificationSettings());
       break;
     case "settings-files":
       sheet(backupSettings());
@@ -1913,3 +1963,21 @@ window.addEventListener("vmeste-game-view", (e) => {
     else render();
   }
 });
+
+function openNotification(data) {
+  if (data?.room !== store?.roomId || !["matches", "games"].includes(data?.tab))
+    return;
+  if (!document.querySelector("#sheet").open) navigate(data.tab);
+  else
+    toast(
+      data.tab === "matches"
+        ? "Новое совпадение сохранено в Матчах"
+        : "Приглашение ждёт в Играх",
+    );
+}
+navigator.serviceWorker?.addEventListener("message", (event) => {
+  if (event.data?.type === "OPEN_ROOM_TAB") openNotification(event.data);
+});
+window.addEventListener("vmeste-notification-open", (event) =>
+  openNotification(event.detail),
+);
