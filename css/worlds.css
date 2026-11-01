@@ -861,3 +861,62 @@ dialog:has(> #ambient-player) > #sheet-content {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+.atlas-observations button.atlas-tile {
+  cursor: pointer;
+  font: inherit;
+  border: 1px solid #d2ded0;
+}
+.atlas-observations .atlas-tile {
+  min-height: 78px;
+  height: auto;
+  aspect-ratio: auto;
+  padding: 6px 3px;
+  gap: 5px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+}
+.atlas-observations .atlas-tile small {
+  position: static;
+  line-height: 1.2;
+  text-align: center;
+  white-space: normal;
+}
+.atlas-observations button.atlas-tile:focus-visible {
+  outline: 3px solid #9c80b6;
+  outline-offset: 2px;
+}
+.atlas-observations .atlas-tile .icon {
+  width: 24px;
+  height: 24px;
+}
+.atlas-observations .atlas-tile small {
+  font-size: 9px;
+}
+.atlas-observations .atlas-count {
+  text-align: center;
+  font-size: 12px;
+}
+.atlas-invitation {
+  padding: 20px;
+  background: linear-gradient(135deg, #f0ebf5, #edf3e9);
+  border-radius: 20px;
+  margin: 12px 0 20px;
+}
+.atlas-invitation > span .icon {
+  width: 32px;
+  height: 32px;
+  color: #9475a4;
+}
+.atlas-invitation h3 {
+  margin: 10px 0;
+}
+#atlas-note-form {
+  display: grid;
+  gap: 14px;
+}
+.atlas-journal p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

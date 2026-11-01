@@ -1,5 +1,6 @@
 import { readIds, markRead, unreadEvents } from "./activity.js";
 import { esc, icon, sheet, toast } from "./ui.js";
+import { discoveryAt, atlasMap, atlasNotebook } from "./atlas.js";
 export const worldKinds = ["gardenworld", "atlasworld", "lettersworld"];
 export const worldTitles = {
   gardenworld: "Сад встреч",
@@ -59,16 +60,6 @@ export function gardenState(store, now = Date.now()) {
     bloom: [...plots.values()].filter((p) => p.bloom).length,
   };
 }
-const stories = [
-  "В камне слышится далёкий прибой. Здесь стоит остановиться.",
-  "На ветке висит фонарь. Кажется, кто-то уже ждал вас.",
-  "Тропа хранит отпечатки двух разных подошв.",
-  "Вы нашли чашку с нарисованной луной.",
-  "В старом письме одно слово: «Возвращайтесь».",
-  "Среди травы мерцает маленький кристалл.",
-  "Отсюда видно место, где можно построить обсерваторию.",
-  "Ветер приносит мелодию из трёх нот.",
-];
 export function atlasState(store, chapter) {
   const events = worldEvents(store, "atlasworld"),
     latest = Math.max(0, ...events.map((e) => Number(e.chapter) || 0));
@@ -86,12 +77,15 @@ export function atlasState(store, chapter) {
   const built = new Set(
     turn.filter((e) => e.type === "build").map((e) => e.landmark),
   );
+  [5, 13, 25].forEach((count, index) => {
+    if (tiles.size >= count) built.add(index);
+  });
   return {
     chapter,
     latest,
     tiles: [...tiles.values()],
     built: [...built],
-    events: turn.slice(-5),
+    events: turn.filter((e) => e.type === "explore").slice(-100),
     complete: tiles.size === 25 && built.size === 3,
   };
 }
@@ -111,19 +105,16 @@ function flower(p) {
   }
   return `<svg viewBox="0 0 120 130" class="garden-flower flower-${p.species}" style="--petal:${p.color};--growth:${p.stage}" aria-hidden="true"><path d="M60 121Q56 85 61 53" stroke="#7f9a78" fill="none" stroke-width="4"/><path d="M59 99Q25 100 31 77Q53 75 59 99m1-16q29 1 28-22-24 0-28 22" fill="#a8bd92"/>${p.stage >= 2 ? Array.from({ length: p.species === "sun" ? 9 : 5 }, (_, i) => `<ellipse cx="60" cy="35" rx="${p.species === "fern" ? 7 : 12}" ry="${14 + p.stage * 2}" fill="var(--petal)" transform="rotate(${i * (p.species === "sun" ? 40 : 72)} 60 55)"/>`).join("") : `<ellipse cx="61" cy="55" rx="10" ry="16" fill="var(--petal)"/>`}<circle cx="60" cy="55" r="${p.stage >= 3 ? 10 : 5}" fill="#f6e1ad"/>${p.bloom ? '<circle cx="96" cy="22" r="2" fill="#f7e6b7"/><circle cx="20" cy="60" r="3" fill="#f7e6b7"/>' : ""}</svg>`;
 }
-export function worldScreen(frame) {
+export function worldScreen(frame, interactive = false) {
   const p = frame.public || {};
   if (frame.kind === "lettersworld")
     return `<section class="persistent-world letters-world"><span class="eyebrow">МОЖНО ОТВЕТИТЬ ПОЗЖЕ</span><h2>Между строк</h2><div class="letters-constellation" aria-hidden="true">${Array.from({ length: 8 }, (_, i) => `<span style="--n:${i}">${icon("letter")}</span>`).join("")}</div><p>${p.questionCount || 0} вопросов · ${p.answerCount || 0} ответов</p><p>Личные ответы остаются на ваших телефонах. А здесь — тихое место вашей переписки.</p></section>`;
   if (frame.kind === "gardenworld")
     return `<section class="persistent-world garden-world"><span class="eyebrow">РАСТЁТ, ДАЖЕ КОГДА ВЫ ДАЛЕКО</span><h2>Сад встреч</h2><p>${p.bloom || 0} цветов распустилось · ${p.waters || 0} тёплых дождей</p><div class="garden-landscape">${(p.plots || []).map((plot) => `<article class="garden-plot">${flower(plot)}<strong>${esc(plot.name)}</strong>${plot.text ? `<p class="flower-wish">${esc(plot.text)}</p>` : ""}<small>${esc(p.players?.find((u) => u.id === plot.author)?.name || "Ваш сад")} · ${new Date(plot.at).toLocaleDateString("ru-RU")} · ${plot.bloom ? "Цветёт" : "Растёт"}</small></article>`).join("") || '<div class="garden-empty"><span>🌱</span><h3>Здесь появится ваш общий сад</h3><p>Посадите первый росток на телефоне.</p></div>'}</div></section>`;
-  const known = new Set((p.tiles || []).map((t) => t.tile)),
-    available = (n) =>
-      known.has(n) ||
-      [n % 5 > 0 ? n - 1 : -1, n % 5 < 4 ? n + 1 : -1, n - 5, n + 5].some((v) =>
-        known.has(v),
-      );
-  return `<section class="persistent-world atlas-world"><span class="eyebrow">ЭКСПЕДИЦИЯ ${p.chapter + 1}</span><h2>Атлас тихих открытий</h2><p>${known.size} / 25 мест · ${p.built?.length || 0} / 3 общих маяков</p><div class="atlas-map">${Array.from({ length: 25 }, (_, n) => `<span class="atlas-tile terrain-${hash(frame.roomId + ":" + p.chapter + ":" + n) % 4} ${known.has(n) ? "known" : available(n) ? "nearby" : "fog"}"><b>${known.has(n) ? ["♧", "≈", "△", "✦"][hash(frame.roomId + ":" + p.chapter + ":" + n) % 4] : available(n) ? "·" : ""}</b><small>${n + 1}</small></span>`).join("")}</div><div class="atlas-landmarks">${["Обсерватория", "Дом историй", "Световой мост"].map((n, i) => `<span class="${p.built?.includes(i) ? "built" : ""}">${icon(["star", "story", "link"][i])}${n}</span>`).join("")}</div></section>`;
+  return (
+    atlasMap(frame, interactive) +
+    (!interactive ? atlasNotebook(p, p.players || [], null, false) : "")
+  );
 }
 export class WorldGames {
   constructor(options) {
@@ -131,6 +122,11 @@ export class WorldGames {
     this.opened = false;
     this.kind = null;
     document.addEventListener("submit", (e) => {
+      if (e.target.id === "atlas-note-form") {
+        e.preventDefault();
+        this.saveAtlas(e.target).catch((error) => toast(error.message));
+        return;
+      }
       if (e.target.id === "garden-wish-form") {
         e.preventDefault();
         const text = String(new FormData(e.target).get("text") || "").trim();
@@ -182,6 +178,43 @@ export class WorldGames {
   get store() {
     return this.options.store();
   }
+  async saveAtlas(form) {
+    const tile = Number(form.dataset.tile),
+      chapter = Number(form.dataset.chapter);
+    const text = String(new FormData(form).get("text") || "").trim();
+    if (
+      !text ||
+      !Number.isInteger(tile) ||
+      tile < 0 ||
+      tile > 24 ||
+      tile === 12 ||
+      !Number.isInteger(chapter) ||
+      chapter < 0 ||
+      chapter > atlasState(this.store).latest
+    )
+      return;
+    const button = form.querySelector("button[type=submit]");
+    button.disabled = true;
+    try {
+      await this.store.save("plans", {
+        id: `${this.store.roomId}:atlas:${chapter}:${tile}:${this.store.userId}`,
+        title: "Атлас тихих открытий",
+        items: [],
+        worldEvent: {
+          world: "atlasworld",
+          type: "explore",
+          tile,
+          chapter,
+          text: text.slice(0, 700),
+          at: Date.now(),
+        },
+      });
+      if (this.kind === "atlasworld" && this.opened) this.render();
+      toast("Находка сохранена в вашем общем атласе");
+    } finally {
+      if (button.isConnected) button.disabled = false;
+    }
+  }
   changed(entries) {
     if (!this.store?.authEstablished || this.store.authViewer) return;
     for (const kind of new Set(
@@ -203,7 +236,7 @@ export class WorldGames {
       this.opened &&
       document.querySelector(".world-panel") &&
       !document.querySelector(
-        "#world-question-form:focus-within,#world-answer-form:focus-within,#garden-wish-form:focus-within",
+        "#world-question-form:focus-within,#world-answer-form:focus-within,#garden-wish-form:focus-within,#atlas-note-form:focus-within",
       )
     )
       this.render();
@@ -249,6 +282,7 @@ export class WorldGames {
     this.kind = kind;
     this.chapter = null;
     this.thread = null;
+    this.atlasTile = null;
     this.lettersView = "inbox";
     this.opened = true;
     this.render();
@@ -259,7 +293,7 @@ export class WorldGames {
     const f = this.frame(),
       p = f.public;
     sheet(
-      `<div class="world-panel">${worldScreen(f)}<div id="world-controls">${this.kind === "lettersworld" ? this.lettersControls() : this.kind === "gardenworld" ? this.gardenControls(p) : this.atlasControls(p)}</div><p class="world-offline-note">${icon("check")} Каждый ход сохранён на этом устройстве. Когда вы встретитесь в сети, мир объединится.</p></div>`,
+      `<div class="world-panel">${worldScreen(f, true)}<div id="world-controls">${this.kind === "lettersworld" ? this.lettersControls() : this.kind === "gardenworld" ? this.gardenControls(p) : this.atlasControls(p)}</div><p class="world-offline-note">${icon("check")} Каждый ход сохранён на этом устройстве. Когда вы встретитесь в сети, мир объединится.</p></div>`,
     );
     this.opened = true;
     this.options.peer()?.publishGame(f);
@@ -351,22 +385,19 @@ export class WorldGames {
       .join("")}</div>`;
   }
   atlasControls(p) {
-    const known = new Set(p.tiles.map((t) => t.tile)),
-      neighbors = Array.from({ length: 25 }, (_, n) => n).filter(
-        (n) =>
-          !known.has(n) &&
-          [n % 5 > 0 ? n - 1 : -1, n % 5 < 4 ? n + 1 : -1, n - 5, n + 5].some(
-            (v) => known.has(v),
-          ),
-      );
-    return `<div class="atlas-explore"><h3>Куда отправимся?</h3><p>Открывайте соседние места в своём ритме. Ваш человек сможет продолжить с любого края общей карты.</p><div class="exploration-choices">${neighbors.map((n) => `<button class="btn soft" data-world="explore" data-tile="${n}">Тропа ${n + 1}</button>`).join("")}</div>${p.tiles.length >= 5 ? `<h3>Оставьте маяк для вашего человека</h3><div class="exploration-choices">${["Обсерватория", "Дом историй", "Световой мост"].map((n, i) => `<button class="btn lavender" data-world="build" data-landmark="${i}" ${p.built.includes(i) ? "disabled" : ""}>${n}${p.built.includes(i) ? " · построен" : ""}</button>`).join("")}</div>` : ""}${p.complete ? '<button class="btn primary wide" data-world="next-chapter">Новая экспедиция · сохранить эту в атласе</button>' : ""}<div class="atlas-journal">${p.events
-      .filter((e) => e.type === "explore")
-      .map(
-        (e) =>
-          `<article><small>Тропа ${e.tile + 1}</small><p>${stories[hash(this.store.roomId + ":" + p.chapter + ":" + e.tile) % stories.length]}</p></article>`,
-      )
-      .reverse()
-      .join("")}</div></div>`;
+    const tile = this.atlasTile,
+      selected =
+        Number.isInteger(tile) && tile !== 12
+          ? discoveryAt(tile, p.chapter)
+          : null;
+    const ownNote = worldEvents(this.store, "atlasworld").find(
+      (e) =>
+        e.chapter === p.chapter &&
+        e.tile === tile &&
+        e.author === this.store.userId &&
+        e.text,
+    );
+    return `<div class="atlas-explore">${selected ? `<button class="btn text" data-world="atlas-back">${icon("back")} Весь атлас</button><div class="atlas-invitation"><span>${icon(selected.symbol)}</span><h3>${esc(selected.title)}</h3><p>${esc(selected.prompt)}</p></div><form id="atlas-note-form" data-tile="${tile}" data-chapter="${p.chapter}"><label>Что хочется запомнить?<textarea name="text" maxlength="700" required placeholder="Пара слов о вашей находке…">${esc(ownNote?.text || "")}</textarea></label><button class="btn primary wide" type="submit">${ownNote ? "Дополнить воспоминание" : "Сохранить открытие"}</button><p class="fine">Можно сделать сейчас или вернуться позже. Ваш человек сможет оставить свою находку в том же месте.</p></form>` : `<h3>Заметили что-нибудь хорошее?</h3><p>Каждый значок на карте — небольшое задание на внимание. Откройте любое, попробуйте вместе или порознь и оставьте несколько слов. Здесь нет таймера и неправильных ответов.</p>`}<div class="letters-toolbar"><button class="btn soft" data-world="atlas-previous" ${!p.chapter ? "disabled" : ""}>Предыдущая глава</button><button class="btn soft" data-world="atlas-current" ${p.chapter === p.latest ? "disabled" : ""}>К последней</button></div>${p.complete && p.chapter === p.latest ? '<button class="btn primary wide" data-world="next-chapter">Начать новую главу · эта останется в истории</button>' : ""}${atlasNotebook(p, p.players, tile)}</div>`;
   }
   async save(event, id) {
     await this.store.save("plans", {
@@ -436,21 +467,27 @@ export class WorldGames {
       }
       await this.save({ type: "water", plot: plot.plot }, id);
     }
-    if (action === "explore") {
-      const s = atlasState(this.store, this.chapter),
-        n = Number(b.dataset.tile),
-        known = new Set(s.tiles.map((t) => t.tile));
-      if (
-        !Number.isInteger(n) ||
-        n < 0 ||
-        n >= 25 ||
-        known.has(n) ||
-        ![n % 5 > 0 ? n - 1 : -1, n % 5 < 4 ? n + 1 : -1, n - 5, n + 5].some(
-          (v) => known.has(v),
-        )
-      )
+    if (action === "atlas-place" || action === "explore") {
+      const tile = Number(b.dataset.tile);
+      if (!Number.isInteger(tile) || tile < 0 || tile > 24 || tile === 12)
         return;
-      await this.save({ type: "explore", tile: n, chapter: s.chapter });
+      this.atlasTile = tile;
+      this.render();
+      document
+        .querySelector("#world-controls")
+        ?.scrollIntoView({ block: "start", behavior: "smooth" });
+      return;
+    }
+    if (["atlas-back", "atlas-previous", "atlas-current"].includes(action)) {
+      if (action === "atlas-previous")
+        this.chapter = Math.max(
+          0,
+          atlasState(this.store, this.chapter).chapter - 1,
+        );
+      if (action === "atlas-current") this.chapter = null;
+      this.atlasTile = null;
+      this.render();
+      return;
     }
     if (action === "build") {
       const s = atlasState(this.store, this.chapter),

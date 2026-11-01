@@ -101,6 +101,11 @@ export function validRecord(table, r, roomId) {
           return false;
       } else if (e.world === "atlasworld") {
         if (
+          e.text != null &&
+          (typeof e.text !== "string" || e.text.length > 700)
+        )
+          return false;
+        if (
           !["explore", "build", "chapter"].includes(e.type) ||
           !Number.isInteger(e.chapter) ||
           e.chapter < 0
