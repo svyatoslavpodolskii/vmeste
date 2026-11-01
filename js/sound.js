@@ -235,8 +235,12 @@ export class NatureSound {
       this.note({ ...phrase[0], duration: 1.8, gain: 0.032 }, now);
       this.nextTouch = now + 0.32;
     }
+    const moved = signature !== this.positionSignature;
     this.positionSignature = signature;
-    this.evolve(true);
+    // Audio runs independently; network hold packets need not rebuild automation.
+    if (now - (this.lastAutomation ?? -1) < 0.09) return;
+    this.lastAutomation = now;
+    this.evolve(moved);
   }
   evolve(touch = false) {
     if (!this.started || !this.context || !this.settings) return;
@@ -283,7 +287,12 @@ export class NatureSound {
         entries.reduce(
           (sum, [, c]) =>
             sum +
-            (c.memory?.[index] || 0) *
+            Math.tanh(
+              (c.memory || []).reduce(
+                (n, v, i) => n + (i % 4 === index ? Number(v) || 0 : 0),
+                0,
+              ),
+            ) *
               Math.exp(
                 -Math.max(0, Date.now() - (c.memoryAt || Date.now())) / 900000,
               ),
@@ -326,6 +335,18 @@ export class NatureSound {
         : i < 4
           ? local[index]
           : harmony[index];
+      const listenerWeight =
+        ownId === "@screen"
+          ? 0.7
+          : mode === "meditation"
+            ? entries
+                .find(([id, c]) => c === voice)?.[0]
+                ?.split(":voice")[0] === ownId
+              ? 1
+              : 0.24
+            : (i + role) % 3 === 0
+              ? 1
+              : 0.3;
       const layer =
         mode === "meditation" ? 0.13 + localWeight * 0.5 : localWeight * 0.9;
       const ebb =
@@ -333,7 +354,7 @@ export class NatureSound {
       node.gain.gain.setTargetAtTime(
         Math.max(
           0.0001,
-          (layer + partner * 0.48) *
+          (layer * listenerWeight + partner * 0.18) *
             (i === 4 ? 0.025 : i < 5 ? 0.13 : 0.22) *
             ebb,
         ),
@@ -434,7 +455,7 @@ export class NatureSound {
           const motion = c.pads?.[3] || [0.5, 0.5];
           return { id, c, seat, melody, motion };
         });
-      for (const { c, seat, melody, motion } of phrases) {
+      for (const { id, c, seat, melody, motion } of phrases) {
         const phrase =
           mode === "soundgarden"
             ? gardenPhrase(contributors, seat, Math.floor(Date.now() / 24000))
@@ -461,7 +482,12 @@ export class NatureSound {
                       ? 0.5
                       : 1),
               gain:
-                (note.gain * (mode === "meditation" ? 0.7 : 0.95)) /
+                (note.gain *
+                  (ownId === "@screen"
+                    ? 0.6
+                    : id.split(":voice")[0] === ownId
+                      ? 1
+                      : 0.2)) /
                 Math.sqrt(entries.length),
               duration: note.duration * (1 + (1 - motion[0]) * 0.8),
               pan: note.pan * (0.25 + motion[1] * 0.75),
@@ -486,6 +512,9 @@ export class NatureSound {
       now = ctx.currentTime;
     this.starVoices ||= new Map();
     const previous = this.starVoices.get(key);
+    const ownId = this.settings.ownId;
+    const local = ownId === "@screen" || key.startsWith(ownId + ":");
+    const strength = local ? 1 : 0.46;
     // A hold updates the envelope of ONE voice; it never adds another phrase.
     if (previous && previous.gesture === star.gesture) {
       if (previous.until === star.until) return;
@@ -497,7 +526,11 @@ export class NatureSound {
         previous.gain.gain.cancelScheduledValues(now);
         previous.gain.gain.setValueAtTime(value, now);
       }
-      previous.gain.gain.setTargetAtTime(0.025 + star.power * 0.03, now, 0.12);
+      previous.gain.gain.setTargetAtTime(
+        (0.025 + star.power * 0.03) * strength,
+        now,
+        0.12,
+      );
       previous.gain.gain.setTargetAtTime(
         0.0001,
         now + (star.holding ? 0.4 : 0.12),
@@ -508,6 +541,14 @@ export class NatureSound {
         now,
         0.3,
       );
+      if (!star.holding) {
+        const release = Math.max(
+          4 + (star.hold || 0) * 2.5,
+          (star.until - Date.now()) / 1000 + 0.3,
+        );
+        previous.osc.stop(now + release);
+        previous.shimmer.stop(now + release);
+      }
       return;
     }
     if (previous && !star.gesture && previous.until >= star.until) return;
@@ -527,14 +568,14 @@ export class NatureSound {
     osc.type = star.index % 2 ? "sine" : "triangle";
     osc.frequency.value = frequency;
     shimmer.type = "sine";
-    shimmer.frequency.value = frequency * 2.003;
+    shimmer.frequency.value = frequency * (local ? 2.003 : 0.501);
     blend.gain.value = 0.12;
     filter.type = "lowpass";
     filter.frequency.value = 700 + star.power * 2600;
     filter.Q.value = 0.45;
     gain.gain.setValueAtTime(0.0001, now);
     gain.gain.exponentialRampToValueAtTime(
-      0.025 + star.power * 0.03,
+      (0.025 + star.power * 0.03) * strength,
       now + 0.035,
     );
     gain.gain.setTargetAtTime(0.0001, now + 0.12, 0.65);
@@ -554,8 +595,14 @@ export class NatureSound {
     this.starVoices.set(key, voice);
     osc.start(now);
     shimmer.start(now);
-    osc.stop(now + 22);
-    shimmer.stop(now + 22);
+    const lifetime = star.holding
+      ? 22
+      : Math.max(
+          4 + (star.hold || 0) * 2.5,
+          (star.until - Date.now()) / 1000 + 0.3,
+        );
+    osc.stop(now + lifetime);
+    shimmer.stop(now + lifetime);
     osc.onended = () => {
       for (const node of [osc, shimmer, blend, filter, gain]) node.disconnect();
       if (this.starVoices.get(key) === voice) this.starVoices.delete(key);
@@ -644,7 +691,7 @@ export class NatureSound {
     this.level = Math.max(0, Math.min(1, value));
     if (this.context)
       this.master.gain.setTargetAtTime(
-        this.level * 0.8,
+        this.muted ? 0 : this.level * 0.8,
         this.context.currentTime,
         0.3,
       );

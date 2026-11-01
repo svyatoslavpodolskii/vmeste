@@ -39,12 +39,24 @@ export function gardenState(store, now = Date.now()) {
       plots.set(e.plot, { ...e, waters: 0 });
   for (const event of events) {
     const plot = plots.get(event.plot);
-    if (event.type === "water" && plot && event.at >= plot.at) plot.waters++;
+    if (!plot || event.at < plot.at) continue;
+    if (event.type === "release") plot.archived = true;
+    if (event.type === "restore") plot.archived = false;
+    if (event.type === "water") {
+      plot.wateredAt ||= {};
+      if (event.at - (plot.wateredAt[event.author] ?? -Infinity) >= 86400000) {
+        plot.waters++;
+        plot.wateredAt[event.author] = event.at;
+      }
+    }
   }
   for (const p of plots.values()) {
     p.stage = Math.min(
       4,
-      1 + Math.floor(Math.max(0, now - p.at) / 900000) + Math.min(2, p.waters),
+      1 +
+        Math.floor(
+          Math.max(0, now - p.at) / 172800000 + Math.min(1, p.waters / 4),
+        ),
     );
     p.bloom = p.stage === 4;
     p.color =
@@ -54,10 +66,11 @@ export function gardenState(store, now = Date.now()) {
     p.name = species.find((s) => s[0] === p.species)[1];
   }
   return {
-    plots: [...plots.values()],
-    waters: events.filter((e) => e.type === "water").length,
+    plots: [...plots.values()].filter((p) => !p.archived),
+    archived: [...plots.values()].filter((p) => p.archived),
+    waters: [...plots.values()].reduce((n, p) => n + p.waters, 0),
     events: events.slice(-8),
-    bloom: [...plots.values()].filter((p) => p.bloom).length,
+    bloom: [...plots.values()].filter((p) => !p.archived && p.bloom).length,
   };
 }
 export function atlasState(store, chapter) {
@@ -101,7 +114,15 @@ function flower(p) {
   if (p.species === "unique") {
     const seed = hash(p.plot),
       count = 5 + (seed % 9);
-    return `<svg viewBox="0 0 120 130" class="garden-flower" aria-hidden="true"><path d="M60 122Q${40 + (seed % 40)} 90 60 52" stroke="#71967c" stroke-width="3" fill="none"/><path d="M59 100Q20 97 34 78Q53 80 59 100m2-12q35-2 22-24-20 0-22 24" fill="hsl(${90 + (seed % 65)} 28% 65%)"/>${p.stage >= 2 ? Array.from({ length: count }, (_, i) => `<ellipse cx="60" cy="${33 + (seed % 9)}" rx="${5 + ((seed >>> 4) % 9)}" ry="${14 + ((seed >>> 8) % 11)}" fill="hsl(${(seed + i * (seed % 7)) % 360} 58% ${64 + (i % 4) * 4}%)" transform="rotate(${(i * 360) / count} 60 53)"/>`).join("") : `<ellipse cx="60" cy="53" rx="9" ry="15" fill="${p.color}"/>`}<circle cx="60" cy="53" r="${5 + (seed % 5)}" fill="hsl(${35 + (seed % 30)} 80% 82%)"/></svg>`;
+    const leafFamily = (seed >>> 12) % 3;
+    const leaf =
+      leafFamily === 0
+        ? "M59 101Q19 100 29 76Q51 75 59 101m2-14q35-1 26-25-23 0-26 25"
+        : leafFamily === 1
+          ? "M59 103Q24 73 23 61Q47 73 59 103m2-15q31-30 35-39-26 6-35 39"
+          : "M59 101l-16-3 5-7-15-4 9-6-6-9 17 9 6 20m2-15 16-1-4-7 13-5-8-4 5-9-17 12-5 14";
+
+    return `<svg viewBox="0 0 120 130" class="garden-flower" aria-hidden="true"><path d="M60 122Q${40 + (seed % 40)} 90 60 52" stroke="#71967c" stroke-width="3" fill="none"/><path d="${leaf}" fill="hsl(${90 + (seed % 65)} 28% 65%)"/>${p.stage >= 2 ? Array.from({ length: count }, (_, i) => `<ellipse cx="60" cy="${33 + (seed % 9)}" rx="${5 + ((seed >>> 4) % 9)}" ry="${14 + ((seed >>> 8) % 11)}" fill="hsl(${(seed + i * (seed % 7)) % 360} 58% ${64 + (i % 4) * 4}%)" transform="rotate(${(i * 360) / count} 60 53)"/>`).join("") : `<ellipse cx="60" cy="53" rx="9" ry="15" fill="${p.color}"/>`}<circle cx="60" cy="53" r="${5 + (seed % 5)}" fill="hsl(${35 + (seed % 30)} 80% 82%)"/></svg>`;
   }
   return `<svg viewBox="0 0 120 130" class="garden-flower flower-${p.species}" style="--petal:${p.color};--growth:${p.stage}" aria-hidden="true"><path d="M60 121Q56 85 61 53" stroke="#7f9a78" fill="none" stroke-width="4"/><path d="M59 99Q25 100 31 77Q53 75 59 99m1-16q29 1 28-22-24 0-28 22" fill="#a8bd92"/>${p.stage >= 2 ? Array.from({ length: p.species === "sun" ? 9 : 5 }, (_, i) => `<ellipse cx="60" cy="35" rx="${p.species === "fern" ? 7 : 12}" ry="${14 + p.stage * 2}" fill="var(--petal)" transform="rotate(${i * (p.species === "sun" ? 40 : 72)} 60 55)"/>`).join("") : `<ellipse cx="61" cy="55" rx="10" ry="16" fill="var(--petal)"/>`}<circle cx="60" cy="55" r="${p.stage >= 3 ? 10 : 5}" fill="#f6e1ad"/>${p.bloom ? '<circle cx="96" cy="22" r="2" fill="#f7e6b7"/><circle cx="20" cy="60" r="3" fill="#f7e6b7"/>' : ""}</svg>`;
 }
@@ -110,7 +131,7 @@ export function worldScreen(frame, interactive = false) {
   if (frame.kind === "lettersworld")
     return `<section class="persistent-world letters-world"><span class="eyebrow">МОЖНО ОТВЕТИТЬ ПОЗЖЕ</span><h2>Между строк</h2><div class="letters-constellation" aria-hidden="true">${Array.from({ length: 8 }, (_, i) => `<span style="--n:${i}">${icon("letter")}</span>`).join("")}</div><p>${p.questionCount || 0} вопросов · ${p.answerCount || 0} ответов</p><p>Личные ответы остаются на ваших телефонах. А здесь — тихое место вашей переписки.</p></section>`;
   if (frame.kind === "gardenworld")
-    return `<section class="persistent-world garden-world"><span class="eyebrow">РАСТЁТ, ДАЖЕ КОГДА ВЫ ДАЛЕКО</span><h2>Сад встреч</h2><p>${p.bloom || 0} цветов распустилось · ${p.waters || 0} тёплых дождей</p><div class="garden-landscape">${(p.plots || []).map((plot) => `<article class="garden-plot">${flower(plot)}<strong>${esc(plot.name)}</strong>${plot.text ? `<p class="flower-wish">${esc(plot.text)}</p>` : ""}<small>${esc(p.players?.find((u) => u.id === plot.author)?.name || "Ваш сад")} · ${new Date(plot.at).toLocaleDateString("ru-RU")} · ${plot.bloom ? "Цветёт" : "Растёт"}</small></article>`).join("") || '<div class="garden-empty"><span>🌱</span><h3>Здесь появится ваш общий сад</h3><p>Посадите первый росток на телефоне.</p></div>'}</div></section>`;
+    return `<section class="persistent-world garden-world"><span class="eyebrow">РАСТЁТ, ДАЖЕ КОГДА ВЫ ДАЛЕКО</span><h2>Сад встреч</h2><p>${p.bloom || 0} цветов распустилось · ${p.waters || 0} тёплых дождей</p><div class="garden-landscape">${(p.plots || []).map((plot) => `<article class="garden-plot">${flower(plot)}<strong>${esc(plot.name)}</strong>${plot.text ? `<p class="flower-wish">${esc(plot.text)}</p>` : ""}<small>${esc(p.players?.find((u) => u.id === plot.author)?.name || "Ваш сад")} · ${new Date(plot.at).toLocaleDateString("ru-RU")} · ${plot.bloom ? "Цветёт" : "Растёт"}</small>${interactive ? `<button class="btn text" data-world="${plot.archived ? "restore" : "release"}" data-plot="${esc(plot.plot)}">${plot.archived ? "Вернуть в сад" : "Отдать вечности"}</button>` : ""}</article>`).join("") || '<div class="garden-empty"><span>🌱</span><h3>Здесь появится ваш общий сад</h3><p>Посадите первый росток на телефоне.</p></div>'}</div></section>`;
   return (
     atlasMap(frame, interactive) +
     (!interactive ? atlasNotebook(p, p.players || [], null, false) : "")
@@ -253,8 +274,15 @@ export class WorldGames {
         ? gardenState(this.store)
         : atlasState(this.store, this.chapter);
     if (this.kind === "gardenworld") {
+      state.archiveCount = state.archived.length;
+      state.showArchive = !!this.gardenArchive;
+      if (this.gardenArchive) state.plots = state.archived;
+      delete state.archived;
       state.total = state.plots.length;
-      state.page = this.gardenPage || 0;
+      state.page = Math.min(
+        this.gardenPage || 0,
+        Math.max(0, Math.ceil(state.total / 24) - 1),
+      );
       state.plots = state.plots
         .slice()
         .reverse()
@@ -376,11 +404,11 @@ export class WorldGames {
     } else document.querySelector("#sheet").scrollTop = 0;
   }
   gardenControls(p) {
-    return `<form id="garden-wish-form"><h3>Вырастить тёплые слова</h3><label>Пожелание, благодарность или мысль дня<textarea name="text" maxlength="700" required placeholder="Пусть у тебя сегодня будет повод улыбнуться…"></textarea></label><p class="fine">Из этих слов вырастет единственный цветок — со своим цветом и лепестками. Дата и автор останутся рядом.</p><button class="btn primary wide" type="submit">Посадить пожелание ${icon("plant")}</button></form><div class="letters-toolbar"><button class="btn soft" data-world="garden-newer" ${!p.page ? "disabled" : ""}>Новые цветы</button><span>${p.total} в саду</span><button class="btn soft" data-world="garden-older" ${(p.page + 1) * 24 >= p.total ? "disabled" : ""}>Раньше</button></div><h3>Тёплый дождь</h3><div class="garden-water-list">${p.plots
+    return `<form id="garden-wish-form"><h3>Вырастить тёплые слова</h3><label>Пожелание, благодарность или мысль дня<textarea name="text" maxlength="700" required placeholder="Пусть у тебя сегодня будет повод улыбнуться…"></textarea></label><p class="fine">Из этих слов вырастет единственный цветок — со своим цветом и лепестками. Дата и автор останутся рядом.</p><button class="btn primary wide" type="submit">Посадить пожелание ${icon("plant")}</button></form><div class="letters-toolbar"><button class="btn soft" data-world="garden-newer" ${!p.page ? "disabled" : ""}>Новые цветы</button><span>${p.total} в саду</span><button class="btn soft" data-world="garden-older" ${(p.page + 1) * 24 >= p.total ? "disabled" : ""}>Раньше</button></div><button class="btn text wide" data-world="garden-archive">${p.showArchive ? "Вернуться в сад" : "Отданные вечности · " + p.archiveCount}</button><h3>Тёплый дождь</h3><p class="fine">Ваш дождь — раз в сутки для каждого ростка. Сад расцветает за несколько дней, без спешки.</p><div class="garden-water-list">${p.plots
       .filter((plot) => !plot.bloom)
       .map(
         (plot) =>
-          `<button class="btn soft" data-world="water" data-plot="${esc(plot.plot)}">${icon("water")} Полить ${esc(plot.name)}</button>`,
+          `<button class="btn soft" data-world="water" data-plot="${esc(plot.plot)}" ${Date.now() - (plot.wateredAt?.[this.store.userId] || 0) < 86400000 || plot.archived ? "disabled" : ""}>${icon("water")} ${Date.now() - (plot.wateredAt?.[this.store.userId] || 0) < 86400000 ? "Дождь уже был сегодня" : "Полить " + esc(plot.name)}</button>`,
       )
       .join("")}</div>`;
   }
@@ -415,6 +443,22 @@ export class WorldGames {
   async action(b) {
     if (!this.kind) return;
     const action = b.dataset.world;
+    if (action === "garden-archive") {
+      this.gardenArchive = !this.gardenArchive;
+      this.gardenPage = 0;
+      this.render();
+      return;
+    }
+    if (action === "release" || action === "restore") {
+      const state = gardenState(this.store);
+      if (
+        [...state.plots, ...state.archived].some(
+          (p) => p.plot === b.dataset.plot,
+        )
+      )
+        await this.save({ type: action, plot: b.dataset.plot });
+      return;
+    }
     if (action === "garden-newer" || action === "garden-older") {
       this.gardenPage = Math.max(
         0,
@@ -459,8 +503,13 @@ export class WorldGames {
       const plot = gardenState(this.store).plots.find(
         (p) => p.plot === b.dataset.plot,
       );
-      if (!plot) return;
-      const id = `${this.store.roomId}:water:${this.store.userId}:${plot.plot}:${Math.floor(Date.now() / 14400000)}`;
+      if (
+        !plot ||
+        plot.bloom ||
+        Date.now() - (plot.wateredAt?.[this.store.userId] || 0) < 86400000
+      )
+        return;
+      const id = `${this.store.roomId}:water:${this.store.userId}:${plot.plot}:${Math.floor(Date.now() / 86400000)}`;
       if (this.store.data.plans.some((p) => p.id === id)) {
         toast("Этот росток уже получил ваш дождь. Загляните позже.");
         return;

@@ -93,16 +93,21 @@ try {
   }
 
   await open(a, "soundgarden");
+  await a.locator('[data-party="invite"]').click();
+  await m.waitForTimeout(300);
+  assert.equal(await m.locator("#sheet[open]").count(), 0);
   await open(b, "soundgarden");
   await a.locator('[data-party="ready"]').click();
   await b.locator('[data-party="ready"]').click();
-  await a.locator('[data-sound-pad="3"]').waitFor();
+  await a.locator('[data-garden-bank="3"]').waitFor();
   for (const p of [a, b]) {
-    assert.equal(await p.locator("[data-sound-pad]").count(), 4);
-    await p.locator('[data-party="sound"]').click();
+    assert.equal(await p.locator("[data-garden-bank]").count(), 4);
+    await p.waitForFunction(() =>
+      window.testAudio.some((c) => c.state === "running"),
+    );
     for (const bank of [0, 1, 2, 3]) {
-      await p.locator(`[data-sound-pad="${bank}"]`).focus();
-      await p.locator(`[data-sound-pad="${bank}"]`).press("ArrowRight");
+      await p.locator(`[data-garden-bank="${bank}"]`).focus();
+      await p.locator(`[data-garden-bank="${bank}"]`).press("ArrowRight");
     }
   }
   await m.waitForFunction(
@@ -112,14 +117,84 @@ try {
         (c) => c.pads?.length === 4,
       ),
   );
-  assert.equal(await m.locator(".scene-voice").count(), 2);
-  await a.screenshot({
-    path: "test-results/music-four-panels.png",
-    fullPage: true,
-  });
+  assert.equal(await m.locator(".scene-voice").count(), 8);
+  await m.waitForFunction(() =>
+    window.testAudio.some((c) => c.state === "running"),
+  );
+  assert.ok(
+    await m.evaluate(
+      () =>
+        document.documentElement.scrollWidth <= innerWidth &&
+        document.documentElement.scrollHeight <= innerHeight + 2,
+    ),
+  );
+  await m.evaluate(
+    () =>
+      (window.sceneReference = document.querySelector(".shared-sound-scene")),
+  );
+  const point = a.locator('[data-garden-bank="0"]');
+  await point.scrollIntoViewIfNeeded();
+  const bounds = await point.boundingBox();
+  await a.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+  await a.mouse.down();
+  await a.mouse.move(
+    bounds.x + bounds.width / 2 + 25,
+    bounds.y + bounds.height / 2 - 30,
+    { steps: 5 },
+  );
+  await a.mouse.up();
+  await m.waitForTimeout(200);
+  assert.equal(
+    await m.evaluate(async () => {
+      const { refreshSoundWorld } = await import("./js/sound-controls.js");
+      const before = document.querySelector(".shared-sound-scene");
+      return (
+        refreshSoundWorld(
+          document.querySelector(".projector-live"),
+          window.testFrame,
+        ) && before === document.querySelector(".shared-sound-scene")
+      );
+    }),
+    true,
+  );
+  await m.locator('[data-action="projector-sound"]').click();
+  await m.waitForFunction(() => window.testAudio.at(-1)?.state === "closed");
+  assert.equal(
+    await b.evaluate(() => !!window.testFrame.public.audioPaused),
+    false,
+  );
+  await m.locator('[data-action="projector-sound"]').click();
+  await m.waitForFunction(() => window.testAudio.at(-1)?.state === "running");
+  await m.setViewportSize({ width: 800, height: 600 });
+  await m.waitForTimeout(100);
+  assert.ok(
+    await m.evaluate(
+      () => document.documentElement.scrollHeight <= innerHeight + 2,
+    ),
+  );
+  await m.setViewportSize({ width: 1280, height: 800 });
+  await a.locator('[data-party="local-mute"]').click();
+  assert.equal(
+    await a.locator('[data-party="local-mute"]').getAttribute("aria-pressed"),
+    "true",
+  );
+  assert.equal(
+    await b.evaluate(() => !!window.testFrame.public.audioPaused),
+    false,
+  );
+  await a.locator('[data-party="local-mute"]').click();
+  await a.locator('[data-party="focus"]').click();
+  await a.evaluate(() => (document.querySelector("#sheet").scrollTop = 0));
+  assert.ok(
+    await a
+      .locator(".instrument")
+      .evaluate((n) => n.getBoundingClientRect().width > innerWidth * 0.9),
+  );
+  await a.screenshot({ path: "test-results/music-one-plane.png" });
+  await a.locator('[data-party="focus"]').click();
   await m.screenshot({ path: "test-results/music-garden-monitor.png" });
   console.log(
-    "PASS both performers have four panels; all eight controls reach the public scene",
+    "PASS both performers have four points on one plane; all eight controls reach the public scene",
   );
   await close(a);
   await close(b);
@@ -128,9 +203,35 @@ try {
   await a.locator('[data-party="ready"]').click();
   await b.locator('[data-party="ready"]').click();
   await a.locator("[data-constellation]").first().waitFor();
+  const before = await a
+    .locator("[data-constellation]")
+    .evaluateAll((nodes) => nodes.map((n) => n.dataset.constellation));
+  await a.locator('[data-party="music-shuffle"]').click();
+  await a.waitForFunction(
+    (previous) =>
+      JSON.stringify(
+        [...document.querySelectorAll("[data-constellation]")].map(
+          (n) => n.dataset.constellation,
+        ),
+      ) !== JSON.stringify(previous),
+    before,
+  );
+  const keys = await a
+    .locator("[data-constellation]")
+    .evaluateAll((nodes) => nodes.map((n) => n.dataset.constellation));
+  await b.waitForFunction(
+    (mine) =>
+      [...document.querySelectorAll("[data-constellation]")].every(
+        (n) => !mine.includes(n.dataset.constellation),
+      ),
+    keys,
+  );
   for (const p of [a, b]) {
+    assert.equal(await p.locator("[data-meditation-point]").count(), 2);
     assert.equal(await p.locator("[data-constellation]").count(), 6);
-    await p.locator('[data-party="sound"]').click();
+    await p.waitForFunction(() =>
+      window.testAudio.some((c) => c.state === "running"),
+    );
     for (const star of await p.locator("[data-constellation]").all()) {
       await star.focus();
       await star.press("Space", { delay: 100 });

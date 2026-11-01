@@ -100,7 +100,7 @@ test("both participants alter harmony; repeated actions retain a bounded musical
     }
 });
 
-test("garden exposes four useful panels per performer and meditation six distinct stars in a pair", () => {
+test("garden exposes four controls on one plane per performer and meditation six distinct stars in a pair", () => {
   const frame = {
     kind: "soundgarden",
     public: {
@@ -112,7 +112,7 @@ test("garden exposes four useful panels per performer and meditation six distinc
     },
   };
   const garden = soundControls(frame, "a", null);
-  assert.equal((garden.match(/data-sound-pad=/g) || []).length, 4);
+  assert.equal((garden.match(/data-garden-bank=/g) || []).length, 4);
   frame.kind = "meditation";
   const a = soundControls(frame, "a", null),
     b = soundControls(frame, "b", null);
@@ -137,4 +137,20 @@ test("twelve short-note keys have distinct stable harmonious pitches regardless 
     Array.from({ length: 12 }, (_, i) => constellationTone(i, room)),
     tones,
   );
+});
+
+test("session swaps exchange ownership without losing or changing pitches", () => {
+  const players = [{ id: "a" }, { id: "b" }];
+  const before = assignedConstellations(players, "a", false, "room:0").map(
+    (s) => s.index,
+  );
+  const after = assignedConstellations(players, "a", false, "room:1").map(
+    (s) => s.index,
+  );
+  assert.notDeepEqual(before, after);
+  assert.deepEqual(
+    after,
+    assignedConstellations(players, "b", false, "room:0").map((s) => s.index),
+  );
+  assert.equal(new Set([...before, ...after]).size, 12);
 });

@@ -44,21 +44,28 @@ export class Store extends EventTarget {
     )?.reaction;
   }
   get matches() {
-    return this.ideas.filter(
-      (i) =>
-        new Set(
-          this.data.reactions
-            .filter(
-              (r) =>
-                r.ideaId === i.id &&
-                (!this.authRoster ||
-                  this.authRoster.some((m) => m.id === r.userId)) &&
-                !r.deletedAt &&
-                ["like", "favorite"].includes(r.reaction),
-            )
-            .map((r) => r.userId),
-        ).size >= 2,
-    );
+    return this.ideas
+      .filter(
+        (i) =>
+          !this.data.plans.some(
+            (p) => !p.deletedAt && p.completedIdea === i.id && p.completedAt,
+          ),
+      )
+      .filter(
+        (i) =>
+          new Set(
+            this.data.reactions
+              .filter(
+                (r) =>
+                  r.ideaId === i.id &&
+                  (!this.authRoster ||
+                    this.authRoster.some((m) => m.id === r.userId)) &&
+                  !r.deletedAt &&
+                  ["like", "favorite"].includes(r.reaction),
+              )
+              .map((r) => r.userId),
+          ).size >= 2,
+      );
   }
   async save(table, fields) {
     const previous = this.data[table].find((r) => r.id === fields.id);

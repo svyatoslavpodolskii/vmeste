@@ -22,10 +22,14 @@ export const constellations = [
   index,
 }));
 
-export function assignedConstellations(players, user, solo = false) {
+export function assignedConstellations(players, user, solo = false, seed = "") {
   const count = solo ? 1 : Math.max(1, Math.min(12, players.length));
   const seat = solo ? 0 : players.findIndex((p) => p.id === user);
-  return constellations.filter((c) => seat >= 0 && c.index % count === seat);
+  const shift =
+    [...seed].reduce((n, c) => (n * 31 + c.charCodeAt(0)) >>> 0, 0) % count;
+  return constellations.filter(
+    (c) => seat >= 0 && (c.index + shift) % count === seat,
+  );
 }
 
 export function compositionState(contributors) {

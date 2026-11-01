@@ -76,6 +76,9 @@ try {
   }
   await open(a, "questions");
   await close(a);
+  assert.ok(await a.locator(".live-game-banner").count());
+  await open(a, "questions");
+  await a.locator('[data-party="leave-table"]').click();
   await a.waitForFunction(
     () => document.querySelectorAll(".live-game-banner").length === 0,
   );
@@ -88,10 +91,10 @@ try {
   );
   await open(a, "meditation");
   await a.locator('[data-party="solo"]').click();
-  await a.locator('[data-party="sound"]').click();
+  await a.waitForFunction(() => window.testAudio.at(-1)?.state === "running");
   await open(b, "meditation");
   await b.locator(".meditation-plane").waitFor();
-  await b.locator('[data-party="sound"]').click();
+  await b.waitForFunction(() => window.testAudio.at(-1)?.state === "running");
   await close(a);
   await close(b);
   await b.locator('#ambient-player [data-party="sound"]').click();

@@ -82,7 +82,7 @@ export function validRecord(table, r, roomId) {
         return false;
       if (e.world === "gardenworld") {
         if (
-          !["plant", "water"].includes(e.type) ||
+          !["plant", "water", "release", "restore"].includes(e.type) ||
           typeof e.plot !== "string" ||
           e.plot.length > 100
         )

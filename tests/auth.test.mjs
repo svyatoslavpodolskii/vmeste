@@ -284,3 +284,21 @@ test("legacy pairing preserves the real participant id instead of an older ghost
   a.db.close();
   b.db.close();
 });
+
+test("a trusted display never asks to admit an unknown device", async () => {
+  let requests = 0;
+  const display = await RoomAuth.create(await store("screen"), {
+    established: true,
+    onRequest: async () => {
+      requests++;
+      return true;
+    },
+  });
+  display.record.viewer = true;
+  const stranger = await RoomAuth.create(await store("stranger"), {
+    established: false,
+  });
+  const result = await wire(display, stranger);
+  assert.equal(requests, 0);
+  assert.equal(result.count, 0);
+});

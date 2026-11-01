@@ -285,6 +285,11 @@ class Admission {
         this.finish();
         return;
       }
+      // A display may reconnect to trusted devices, but cannot admit strangers.
+      if (this.auth.record.viewer) {
+        this.c.close();
+        return;
+      }
       if (
         (this.auth.blocked.get(keyId(this.remote.publicKey)) || 0) > Date.now()
       )

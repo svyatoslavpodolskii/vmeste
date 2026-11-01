@@ -37,8 +37,8 @@ test("independent offline gardens preserve both plants and all watering after me
   await event(a, "gardenworld", { type: "water", plot: "A:0", at: 100001 });
   await a.merge(delta(b, metadata(a)));
   await b.merge(delta(a, metadata(b)));
-  const one = gardenState(a, 100000 + 3600000),
-    two = gardenState(b, 100000 + 3600000);
+  const one = gardenState(a, 100000 + 7 * 86400000),
+    two = gardenState(b, 100000 + 7 * 86400000);
   assert.deepEqual(one, two);
   assert.equal(one.plots.length, 2);
   assert.equal(one.bloom, 2);

@@ -1,4 +1,5 @@
-﻿export function localDay(date = new Date()) {
+import { ownLiked, completedIdea } from "./plans.js";
+export function localDay(date = new Date()) {
   return `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
 }
 function hash(text) {
@@ -85,7 +86,10 @@ export function momentIdeas(store, date = new Date()) {
       n += 2;
     return n + (hash(localDay(date) + daypart + i.id) % 100) / 30;
   };
-  const list = [...store.ideas].sort((a, b) => score(b) - score(a)).slice(0, 8);
+  const list = store.ideas
+    .filter((i) => !ownLiked(store, i.id) && !completedIdea(store, i.id))
+    .sort((a, b) => score(b) - score(a))
+    .slice(0, 8);
   return {
     symbol,
     title,

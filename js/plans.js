@@ -48,10 +48,14 @@ export function preference(store, idea) {
   );
   return rs.reduce((n, r) => n + (r.reaction === "favorite" ? 4 : 2), 0);
 }
-export function recommendations(store, draft = []) {
+export function recommendations(store, draft = [], { discover = false } = {}) {
   const chosen = store.ideas.filter((i) => draft.includes(i.id));
   return store.ideas
-    .filter((i) => !draft.includes(i.id))
+    .filter(
+      (i) =>
+        !draft.includes(i.id) &&
+        (!discover || (!ownLiked(store, i.id) && !completedIdea(store, i.id))),
+    )
     .sort((a, b) => {
       const score = (i) =>
         preference(store, i) * 10 +
@@ -64,4 +68,30 @@ export function recommendations(store, draft = []) {
         );
       return score(b) - score(a);
     });
+}
+
+export function ownLiked(store, id) {
+  return store.data.reactions.some(
+    (r) =>
+      r.ideaId === id &&
+      r.userId === store.userId &&
+      !r.deletedAt &&
+      ["like", "favorite"].includes(r.reaction),
+  );
+}
+export function completedIdea(store, id) {
+  return store.data.plans.some(
+    (p) => !p.deletedAt && p.completedIdea === id && p.completedAt,
+  );
+}
+export function partnerPreference(store, id) {
+  return store.data.reactions
+    .filter(
+      (r) =>
+        r.ideaId === id &&
+        r.userId !== store.userId &&
+        !r.deletedAt &&
+        ["like", "favorite"].includes(r.reaction),
+    )
+    .reduce((n, r) => n + (r.reaction === "favorite" ? 4 : 2), 0);
 }

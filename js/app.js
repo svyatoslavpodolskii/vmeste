@@ -1,3 +1,4 @@
+import { ownLiked, completedIdea, partnerPreference } from "./plans.js";
 import {
   activityEvents,
   activitySheet,
@@ -27,6 +28,7 @@ import { Store } from "./store.js";
 import { RoomPeer } from "./peer.js";
 import { selectGameScreen } from "./game-protocol.js";
 import { NatureSound } from "./sound.js";
+import { refreshSoundWorld } from "./sound-controls.js";
 import { MoodJournal } from "./mood.js";
 import {
   notificationSettings,
@@ -77,8 +79,14 @@ import {
 const app = document.querySelector("#app");
 const greetedRooms = new Set();
 let projectorAudio,
-  projectorAudioEnabled = false,
+  projectorAudioEnabled = true,
   projectorRound;
+function projectorSoundLabel() {
+  if (!projectorAudioEnabled) return "Звук экрана";
+  return projectorAudio?.context?.state === "suspended"
+    ? "Нажмите, чтобы включить звук"
+    : "Выключить звук экрана";
+}
 function updateProjectorAudio(frame) {
   const musical =
     frame &&
@@ -102,27 +110,52 @@ function updateProjectorAudio(frame) {
     audio.stop();
     return;
   }
-  audio
-    .start()
+  if (audio.started) {
+    audio.apply(frame.public.contributors || {}, "@screen", frame.kind);
+    return;
+  }
+  if (audio.starting) return;
+  const startup = audio.start();
+  if (audio.context && !audio.screenListenerBound) {
+    audio.screenListenerBound = true;
+    audio.context.addEventListener("statechange", () => {
+      if (projectorAudio !== audio) return;
+      const button = document.querySelector('[data-action="projector-sound"]');
+      if (button) button.textContent = projectorSoundLabel();
+    });
+  }
+  startup
     .then(() => {
       if (projectorAudio === audio)
-        audio.apply(
-          frame.public.contributors || {},
-          Object.keys(frame.public.contributors || {})[0],
-          frame.kind,
-        );
+        audio.apply(frame.public.contributors || {}, "@screen", frame.kind);
     })
     .catch(() =>
       toast("Нажмите «Звук экрана», чтобы разрешить воспроизведение"),
     );
 }
+document.addEventListener("pointerdown", (event) => {
+  if (event.target.closest('[data-action="projector-sound"]')) return;
+  if (
+    projectorAudioEnabled &&
+    !state.screenFrame?.public.audioPaused &&
+    projectorAudio?.context?.state === "suspended"
+  )
+    projectorAudio.context.resume().catch(() => {});
+  if (
+    party.audio?.context?.state === "suspended" &&
+    !party.audioFrame?.public.audioPaused
+  )
+    party.audio.context.resume().catch(() => {});
+});
 document.addEventListener("click", (event) => {
   if (!event.target.closest('[data-action="projector-sound"]')) return;
+  if (projectorAudioEnabled && projectorAudio?.context?.state === "suspended") {
+    projectorAudio.context.resume().catch(() => {});
+    return;
+  }
   projectorAudioEnabled = !projectorAudioEnabled;
   updateProjectorAudio(state.screenFrame);
-  event.target.closest("button").textContent = projectorAudioEnabled
-    ? "Выключить звук экрана"
-    : "Звук экрана";
+  event.target.closest("button").textContent = projectorSoundLabel();
 });
 document.addEventListener("change", (e) => {
   captureProfileDraft(e);
@@ -237,6 +270,7 @@ function rememberGameFrame(frame) {
 const party = new PartyGames({
   store: () => store,
   peer: () => peer,
+  isMonitor: () => !!state.screenOnly,
   soundSeed: () => `${roomId}:${userId}:${roomAuth?.record.publicKey.x}`,
   onInvite: (frame) => {
     rememberGameFrame(frame);
@@ -278,7 +312,7 @@ function render() {
   if (store.authEstablished && (store.authViewer || state.screenOnly)) {
     const f = state.screenFrame;
     updateProjectorAudio(f);
-    app.innerHTML = `<main class="projector"><header><span>${roomSymbols(roomId)}</span>${btn("Мои комнаты", "rooms", "text")}${!store.authViewer ? btn("Играть здесь", "client-mode", "text") : ""}${btn("На весь экран", "fullscreen", "text")}${btn(projectorAudioEnabled ? "Выключить звук экрана" : "Звук экрана", "projector-sound", "soft")}</header><div class="projector-card"><span class="eyebrow">ОБЩИЙ ЭКРАН</span><div class="projector-live">${screenTabs()}${f ? partyScreen(f, true) : `<h1>Экран готов</h1><p>Начните игру на телефоне. Здесь появится общая карточка — без скрытых ответов и личных данных.</p>`}</div></div><footer>Управление остаётся на телефоне</footer></main>`;
+    app.innerHTML = `<main class="projector"><header><span>${roomSymbols(roomId)}</span>${btn("Мои комнаты", "rooms", "text")}${!store.authViewer ? btn("Играть здесь", "client-mode", "text") : ""}${btn("На весь экран", "fullscreen", "text")}${btn(projectorSoundLabel(), "projector-sound", "soft")}</header><div class="projector-card"><span class="eyebrow">ОБЩИЙ ЭКРАН</span><div class="projector-live">${screenTabs()}${f ? partyScreen(f, true) : `<h1>Экран готов</h1><p>Начните игру на телефоне. Здесь появится общая карточка — без скрытых ответов и личных данных.</p>`}</div></div><footer>Управление остаётся на телефоне</footer></main>`;
     return;
   }
   if (store.authEstablished === false) {
@@ -835,6 +869,8 @@ function prepareSwipe(random = false) {
   const available = store.ideas.filter(
     (i) =>
       (swipeMode !== "plan" || !state.draft.includes(i.id)) &&
+      (swipeMode !== "discover" ||
+        (!ownLiked(store, i.id) && !completedIdea(store, i.id))) &&
       (swipeFilters.category === "Всё" ||
         [i.category, i.mood, i.location, i.topic].includes(
           swipeFilters.category,
@@ -871,7 +907,11 @@ function prepareSwipe(random = false) {
         (i) => !saved.remaining.includes(i.id) && !swipeSeen.includes(i.id),
       )
       .map((i) => i.id);
-    swipeDeck = fresh.concat(saved.remaining.filter((id) => ids.has(id)));
+    swipeDeck = fresh
+      .concat(saved.remaining.filter((id) => ids.has(id)))
+      .sort(
+        (a, b) => partnerPreference(store, b) - partnerPreference(store, a),
+      );
     return;
   }
   swipeSeen = [];
@@ -882,14 +922,23 @@ function prepareSwipe(random = false) {
           .filter((i) => preference(store, i))
           .sort((a, b) => recent(b) - recent(a))
           .concat(shuffle(available.filter((i) => !preference(store, i))))
-  ).map((i) => i.id);
+  )
+    .sort(
+      (a, b) => partnerPreference(store, b.id) - partnerPreference(store, a.id),
+    )
+    .map((i) => i.id);
 }
 function swipeView() {
-  swipeDeck = swipeDeck.filter((id) => ideaById(id));
+  swipeDeck = swipeDeck.filter(
+    (id) =>
+      ideaById(id) &&
+      (swipeMode !== "discover" ||
+        (!ownLiked(store, id) && !completedIdea(store, id))),
+  );
   if (!swipeDeck.length) prepareSwipe(true);
   const i = ideaById(swipeDeck[0]);
   sheet(
-    `<div class="discover-head"><span class="eyebrow">DISCOVER · ДЛЯ ДВОИХ</span><h2>${swipeMode === "plan" ? "Выбираем вечер" : "Открываем новое"}</h2>${btn(icon("filter") + " Подобрать", "swipe-filter", "soft")}<p class="swipe-filter-summary">${[swipeFilters.category !== "Всё" ? categoryLabel(swipeFilters.category) : "Все занятия", swipeFilters.location, swipeFilters.minutes ? `до ${swipeFilters.minutes} мин` : "", swipeFilters.free ? "бесплатно" : ""].filter(Boolean).join(" · ")}</p><div class="row">${btn("Открытия", "swipe-mode", swipeMode === "discover" ? "primary" : "soft", 'data-id="discover"')}${btn("В план", "swipe-mode", swipeMode === "plan" ? "primary" : "soft", 'data-id="plan"')}${btn(icon("shuffle"), "swipe-random", "soft", 'aria-label="Перемешать идеи"')}</div></div>${i ? `<div class="swipe-stack"><div id="swipe-card" class="bond-${affinity(store, i).level}" data-id="${esc(i.id)}">${art(i)}<div class="swipe-copy">${affinity(store, i).html}<h3>${esc(i.title)}</h3><p>${esc(i.description)}</p><span>${duration(i.duration)} · ${esc(i.location)}</span></div></div></div><p class="muted center">Влево — дальше · вправо — ${swipeMode === "plan" ? "в план" : "нравится"}</p><div class="swipe-actions">${btn(icon("back"), "swipe-back", "soft", `aria-label="Предыдущая идея" ${swipeSeen.length ? "" : "disabled"}`)}${btn(icon("close"), "swipe-next", "soft", 'aria-label="Следующая идея"')}${btn(icon("heart"), "swipe-yes", "primary", `data-id="${esc(i.id)}" aria-label="${swipeMode === "plan" ? "Добавить в план" : "Нравится"}"`)}${btn(icon("plus"), "swipe-add", "lavender", `data-id="${esc(i.id)}" aria-label="В план"`)}</div>` : "<p>По этим условиям идей не осталось. Измените подбор или откройте новый круг.</p>"}`,
+    `<div class="discover-head"><span class="eyebrow">DISCOVER · ДЛЯ ДВОИХ</span><h2>${swipeMode === "plan" ? "Выбираем вечер" : "Открываем новое"}</h2>${btn(icon("filter") + " Подобрать", "swipe-filter", "soft")}<p class="swipe-filter-summary">${[swipeFilters.category !== "Всё" ? categoryLabel(swipeFilters.category) : "Все занятия", swipeFilters.location, swipeFilters.minutes ? `до ${swipeFilters.minutes} мин` : "", swipeFilters.free ? "бесплатно" : ""].filter(Boolean).join(" · ")}</p><div class="row">${btn("Открытия", "swipe-mode", swipeMode === "discover" ? "primary" : "soft", 'data-id="discover"')}${btn("В план", "swipe-mode", swipeMode === "plan" ? "primary" : "soft", 'data-id="plan"')}${btn(icon("shuffle"), "swipe-random", "soft", 'aria-label="Перемешать идеи"')}</div></div>${i ? `<div class="swipe-stack"><div id="swipe-card" class="bond-${affinity(store, i).level}" data-id="${esc(i.id)}">${art(i)}<div class="swipe-copy">${partnerPreference(store, i.id) ? `<span class="partner-pick">${icon("heart")} Нравится вашему человеку</span>` : ""}<h3>${esc(i.title)}</h3><p>${esc(i.description)}</p><span>${duration(i.duration)} · ${esc(i.location)}</span></div></div></div><p class="muted center">Влево — дальше · вправо — ${swipeMode === "plan" ? "в план" : "нравится"}</p><div class="swipe-actions">${btn(icon("back"), "swipe-back", "soft", `aria-label="Предыдущая идея" ${swipeSeen.length ? "" : "disabled"}`)}${btn(icon("close"), "swipe-next", "soft", 'aria-label="Следующая идея"')}${btn(icon("heart"), "swipe-yes", "primary", `data-id="${esc(i.id)}" aria-label="${swipeMode === "plan" ? "Добавить в план" : "Нравится"}"`)}${btn(icon("heart") + "✦", "swipe-super", "lavender", `data-id="${esc(i.id)}" aria-label="Суперлайк"`)}${swipeMode === "plan" ? btn(icon("plus"), "swipe-add", "lavender", `data-id="${esc(i.id)}" aria-label="В план"`) : ""}</div>` : "<p>По этим условиям идей не осталось. Измените подбор или откройте новый круг.</p>"}`,
   );
 }
 async function persistSwipe() {
@@ -1195,6 +1244,12 @@ async function action(a, el) {
     case "swipe-next":
       await swipeAdvance(false);
       break;
+    case "swipe-super":
+      if (!swipeBusy && ideaById(id)) {
+        await store.react(id, "favorite");
+        await swipeAdvance(false);
+      }
+      break;
     case "swipe-yes":
       await swipeAdvance(true);
       break;
@@ -1239,6 +1294,26 @@ async function action(a, el) {
       await persistDraft();
       navigate("build");
       break;
+    case "complete-idea": {
+      const idea = ideaById(id);
+      if (!idea || completedIdea(store, id)) break;
+      await store.save("plans", {
+        id: `${roomId}:completed:${id}`,
+        title: idea.title,
+        items: [id],
+        completedIdea: id,
+        completedAt: Date.now(),
+        arcadeRecord: {
+          kind: "activity",
+          seconds: 0,
+          players: store.users.map((u) => u.localUserId),
+          activity: { ...idea },
+        },
+      });
+      toast("Сохранено на выставке ✨");
+      render();
+      break;
+    }
     case "complete-plan": {
       const p = store.data.plans.find((p) => p.id === id);
       await store.save("plans", {
@@ -1958,9 +2033,9 @@ window.addEventListener("vmeste-game-view", (e) => {
   if (store?.authViewer || state.screenOnly) {
     updateProjectorAudio(state.screenFrame);
     const live = document.querySelector(".projector-live");
-    if (live)
+    if (live && !refreshSoundWorld(live, state.screenFrame))
       live.innerHTML = screenTabs() + partyScreen(state.screenFrame, true);
-    else render();
+    else if (!live) render();
   }
 });
 

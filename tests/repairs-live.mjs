@@ -128,7 +128,7 @@ try {
   await a.locator("[data-party=draw-next]").click();
   await a.locator("[data-party=draw-skip]").click();
   await a.locator("[data-party=draw-next]").waitFor();
-  await close(a);
+  await a.locator('[data-party="leave-table"]').click();
   await b.waitForFunction(() =>
     window.framesSeen.some(
       (f) => f.round === window.frameSeen.round && f.finished,
@@ -138,6 +138,11 @@ try {
   console.log(
     "PASS two phones: readiness, 2500 retained strokes, >30s drawing, guessed, skipped and host exit",
   );
+  await a.locator('.bottom-nav [data-action="profile"]').click();
+  await a.locator('[data-action="game-records"]').click();
+  await a.locator('[data-party="view-record"]').first().click();
+  await a.locator(".museum-gallery").waitFor();
+  await close(a);
   await open(a, "likely");
   await open(b, "likely");
   await a.locator("[data-party=ready]").click();
@@ -159,13 +164,15 @@ try {
   );
   await open(a, "meditation");
   await a.locator("[data-party=solo]").click();
-  await a.locator("[data-party=sound]").click();
+  await a.waitForFunction(
+    () => window.audioContexts.at(-1)?.state === "running",
+  );
   await monitor.waitForFunction(
     () =>
       window.frameSeen.kind === "meditation" &&
       window.frameSeen.stage === "running",
   );
-  await monitor.locator("[data-action=projector-sound]").click();
+
   await monitor.waitForFunction(
     () => window.audioContexts.at(-1)?.state === "running",
   );
