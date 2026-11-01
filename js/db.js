@@ -10,15 +10,34 @@ export class Database {
   constructor(name = "vmeste-v1") {
     this.name = name;
   }
-  async open() {
+  async open(timeout = 12000) {
     this.db = await new Promise((resolve, reject) => {
+      let settled = false;
+      const timer = setTimeout(() => {
+        settled = true;
+        reject(
+          Error(
+            "Хранилище не ответило. Закройте другие окна приложения и попробуйте снова.",
+          ),
+        );
+      }, timeout);
       const r = indexedDB.open(this.name, 1);
       r.onupgradeneeded = () => {
         for (const name of TABLES)
           r.result.createObjectStore(name, { keyPath: "id" });
       };
-      r.onsuccess = () => resolve(r.result);
-      r.onerror = () => reject(r.error);
+      r.onsuccess = () => {
+        clearTimeout(timer);
+        if (settled) return r.result.close();
+        settled = true;
+        r.result.onversionchange = () => r.result.close();
+        resolve(r.result);
+      };
+      r.onerror = () => {
+        clearTimeout(timer);
+        settled = true;
+        reject(r.error);
+      };
     });
     return this;
   }
