@@ -788,3 +788,76 @@ dialog > #ambient-player {
 dialog:has(> #ambient-player) > #sheet-content {
   padding-bottom: calc(110px + env(safe-area-inset-bottom));
 }
+/* Personal records stay readable as the garden and journal grow. */
+.garden-plot .flower-wish {
+  font-size: 14px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: #51465a;
+  padding: 0 8px;
+}
+#garden-wish-form,
+#mood-form {
+  display: grid;
+  gap: 16px;
+  margin: 20px 0;
+}
+.mood-metric {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+.mood-metric legend {
+  margin-bottom: 10px;
+  font-weight: 700;
+}
+.mood-metric > div {
+  display: flex;
+  gap: 8px;
+}
+.mood-metric label {
+  flex: 1;
+  margin: 0;
+  position: relative;
+}
+.mood-metric input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+}
+.mood-metric span {
+  display: grid;
+  place-items: center;
+  border: 1px solid #e4d4dd;
+  border-radius: 14px;
+  height: 44px;
+  cursor: pointer;
+  background: #fffaf4;
+}
+.mood-metric input:checked + span {
+  background: #eedff0;
+  border-color: #b48bb7;
+  box-shadow: 0 2px 10px #aa85b520;
+}
+.mood-metric input:focus-visible + span {
+  outline: 2px solid #9b779e;
+  outline-offset: 2px;
+}
+.mood-metric small {
+  display: block;
+  margin-top: 7px;
+  color: #776c7b;
+}
+.mood-history article {
+  padding: 16px;
+  margin: 10px 0;
+  background: #fffaf4;
+  border: 1px solid #eadce3;
+  border-radius: 18px;
+}
+.mood-note {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

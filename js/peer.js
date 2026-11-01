@@ -221,7 +221,9 @@ export class RoomPeer {
     this.bind(
       this.peer.connect(this.prefix + "-hub", {
         reliable: true,
-        serialization: "json",
+        // PeerJS JSON rejects frames >= 16,300 bytes (including drawings and
+        // galleries). BinaryPack splits large snapshots and reassembles them.
+        serialization: "binary",
       }),
     );
   }
@@ -474,6 +476,51 @@ export class RoomPeer {
       clearTimeout(timeout);
       this.connecting = false;
       this.sessions.delete(c.peer);
+      const member =
+        session.admission?.remoteMemberId ||
+        session.admission?.remote?.memberId;
+      if (
+        session.admission?.authorized &&
+        member &&
+        !session.admission.remoteViewer &&
+        ![...this.sessions.values()].some(
+          (s) =>
+            s.admission?.authorized &&
+            (s.admission.remoteMemberId || s.admission.remote?.memberId) ===
+              member,
+        )
+      )
+        window.dispatchEvent(
+          new CustomEvent("vmeste-game-disconnected", { detail: { member } }),
+        );
+      for (const [kind, frame] of this.games) {
+        if (
+          frame.finished ||
+          !["lobby", "running"].includes(frame.stage) ||
+          (this.isHub
+            ? frame.controllerClient !== c.peer
+            : frame.controller === this.store.userId)
+        )
+          continue;
+        const unavailable = {
+          ...frame,
+          ownerOffline: true,
+          public: {
+            ...frame.public,
+            away: [
+              ...new Set([...(frame.public?.away || []), frame.controller]),
+            ],
+          },
+        };
+        this.games.set(kind, unavailable);
+        window.dispatchEvent(
+          new CustomEvent("vmeste-game-view", { detail: unavailable }),
+        );
+        if (this.isHub)
+          for (const other of this.sessions.values())
+            if (other.admission?.authorized && other.c.open)
+              other.c.send({ type: "game-view", frame: unavailable });
+      }
       this.auth?.pending.delete(c.peer);
       this.auth?.options.onPendingClosed?.(c.peer);
       if (this.connection === c) {
@@ -710,7 +757,7 @@ function validFrame(frame) {
   return (
     frame &&
     typeof frame === "object" &&
-    JSON.stringify(frame).length < 48000 &&
+    JSON.stringify(frame).length < 512000 &&
     typeof frame.title === "string" &&
     typeof frame.text === "string" &&
     frame.title.length < 160 &&

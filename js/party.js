@@ -1,4 +1,5 @@
 import { updateSoundConnections } from "./sound-controls.js";
+import { updateGamePresence } from "./game-protocol.js";
 import { assignedConstellations } from "./composition.js";
 import { worldKinds, worldScreen } from "./worlds.js";
 import { TURN_WORLD, turnScreen } from "./turn-games.js";
@@ -233,10 +234,17 @@ export function partyScreen(f, screen = false) {
   const p = f.public || {},
     players = Array.isArray(p.players) ? p.players.slice(0, 10) : [];
   let body = "";
+  if (p.paused && !f.finished)
+    return `<section class="session-done"><span class="eyebrow">МОЖНО НЕ ТОРОПИТЬСЯ</span><h2>${esc(f.title)}</h2><p>Пауза: ${players
+      .filter((u) => p.away?.includes(u.id))
+      .map((u) => esc(u.name))
+      .join(
+        ", ",
+      )} отошёл. Вернитесь в приложение — продолжим с того же места.</p></section>`;
   if (f.stage === "lobby" && f.finished)
     return `<section class="session-done"><span class="eyebrow">СТОЛ ЗАКРЫТ</span><h2>${esc(f.title)}</h2><p>Эта партия завершена. Можно открыть новую игру из библиотеки.</p></section>`;
   if (f.stage === "lobby")
-    return `<section class="table-lobby"><span class="eyebrow">СОБИРАЕМСЯ ЗА ОДНИМ СТОЛОМ</span><h2>${esc(f.title)}</h2><p>Игра начнётся, когда присоединятся минимум ${p.minPlayers || 2} участника и все нажмут «Готов».</p><div class="lobby-players">${players.map((u) => `<div class="${p.readyPlayers?.includes(u.id) ? "is-ready" : ""}"><span>${esc(u.avatar)}</span><strong>${esc(u.name)}</strong><small>${p.readyPlayers?.includes(u.id) ? "Готов" : p.joined?.includes(u.id) ? "В комнате" : "Приглашён"}</small></div>`).join("")}</div>${p.needsUpdate?.length ? `<div class="lobby-update"><span>${icon("settings")}</span><div><strong>Нужно обновить приложение</strong><p>На устройствах: ${p.needsUpdate.map(esc).join(", ")}. Откройте «Настройки» → «Обновление», затем вернитесь к столу. Ответы и история сохранятся.</p></div></div>` : ""}<p class="fine">${p.requiresScreen ? `${p.screenCount ? "Общий экран подключён" : "Подключите ПК как общий экран — это часть игры"}` : "Один общий стол · одинаковые лобби объединяются автоматически"}</p></section>`;
+    return `<section class="table-lobby"><span class="eyebrow">СОБИРАЕМСЯ ЗА ОДНИМ СТОЛОМ</span><h2>${esc(f.title)}</h2><p>Игра начнётся, когда присоединятся минимум ${p.minPlayers || 2} участника и все нажмут «Готов».</p><div class="lobby-players">${players.map((u) => `<div class="${p.readyPlayers?.includes(u.id) ? "is-ready" : ""}"><span>${esc(u.avatar)}</span><strong>${esc(u.name)}</strong><small>${p.away?.includes(u.id) ? "Отошёл" : p.readyPlayers?.includes(u.id) ? "Готов" : p.joined?.includes(u.id) ? "В комнате" : "Приглашён"}</small></div>`).join("")}</div>${p.needsUpdate?.length ? `<div class="lobby-update"><span>${icon("settings")}</span><div><strong>Нужно обновить приложение</strong><p>На устройствах: ${p.needsUpdate.map(esc).join(", ")}. Откройте «Настройки» → «Обновление», затем вернитесь к столу. Ответы и история сохранятся.</p></div></div>` : ""}<p class="fine">${p.requiresScreen ? `${p.screenCount ? "Общий экран подключён" : "Подключите ПК как общий экран — это часть игры"}` : "Один общий стол · одинаковые лобби объединяются автоматически"}</p></section>`;
   if (f.kind === "race" && p.rulesVersion === CIRCUIT_VERSION)
     return circuitScreen(f);
   if (f.kind === "beacon" && p.rulesVersion === BEACON_RULES)
@@ -291,6 +299,13 @@ export class PartyGames {
     this.audioFrame = null;
     this.drafts = new Map();
     this.markQueue = Promise.resolve();
+    document.addEventListener("visibilitychange", () => {
+      if (this.opened && this.frame && !this.frame.finished)
+        this.input({
+          action: "presence",
+          active: document.visibilityState === "visible",
+        });
+    });
     window.addEventListener("vmeste-peer-ready", () => this.restore());
     window.addEventListener("vmeste-game-connected", () => {
       if (this.state && this.hosting) {
@@ -301,6 +316,19 @@ export class PartyGames {
         this.input({ action: "join" });
     });
     window.addEventListener("vmeste-game-view", (e) => this.receive(e.detail));
+    window.addEventListener("vmeste-game-disconnected", (event) => {
+      for (const table of this.tables.values())
+        if (
+          table.state &&
+          !table.frame.finished &&
+          table.state.joined?.includes(event.detail.member)
+        )
+          this.command(event.detail.member, {
+            round: table.frame.round,
+            action: "presence",
+            active: false,
+          });
+    });
     window.addEventListener("vmeste-game-input", (e) =>
       this.command(e.detail.sender, e.detail.input),
     );
@@ -698,8 +726,18 @@ export class PartyGames {
   }
 
   publicFrame() {
+    const frame = this.buildPublicFrame();
     return {
-      ...this.buildPublicFrame(),
+      ...frame,
+      public: {
+        ...frame.public,
+        paused: !!this.state.pausedAt,
+        away: this.state.away || [],
+      },
+      elapsed:
+        this.state.pausedAt && this.state.started
+          ? this.state.pausedAt - this.state.started
+          : frame.elapsed,
       ownerDevice: this.state.ownerDevice || this.deviceId,
       closedAt: this.state.closedAt || 0,
     };
@@ -711,6 +749,7 @@ export class PartyGames {
         solo: !!s.solo,
         joined: s.joined,
         readyPlayers: s.readyPlayers,
+        away: s.away || [],
         turn: s.turn || 0,
         historyDepth: s.past?.length || 0,
       };
@@ -732,6 +771,7 @@ export class PartyGames {
           players: s.players,
           joined: s.joined,
           readyPlayers: s.readyPlayers,
+          away: s.away || [],
           requiresScreen: s.kind === "rift",
           minPlayers: s.kind === "museum" ? 3 : 2,
           needsUpdate: this.peer?.gameCompatibility?.(2) || [],
@@ -884,7 +924,7 @@ export class PartyGames {
       if (s.solved) p.solution = s.secret;
       p.lastGuess = s.lastGuess;
       progress = s.solved
-        ? `Угадали: ${s.secret}`
+        ? `${s.skipped ? "Пропустили" : "Угадали"}: ${s.secret}`
         : "У каждого свой взгляд. Никаких штрафов за время.";
     }
     if (s.kind === "beacon") {
@@ -1336,6 +1376,7 @@ export class PartyGames {
         });
       }
       if (!s.joined.includes(sender)) s.joined.push(sender);
+      updateGamePresence(s, sender, true);
       if (s.contributors && sender !== this.userId && s.solo) {
         s.solo = false;
         if (s.kind !== "meditation")
@@ -1364,9 +1405,26 @@ export class PartyGames {
       if (!s.joined.includes(sender)) return;
       s.joined = s.joined.filter((id) => id !== sender);
       s.readyPlayers = (s.readyPlayers || []).filter((id) => id !== sender);
+      if (
+        (s.stage === "running" &&
+          !["soundgarden", "meditation"].includes(s.kind)) ||
+        sender === s.controller ||
+        sender === this.userId ||
+        !s.joined.length
+      ) {
+        s.finished = true;
+        s.closedAt = Date.now();
+      }
       this.broadcast();
       return;
     }
+    if (input.action === "presence" && s.joined.includes(sender)) {
+      updateGamePresence(s, sender, !!input.active);
+      this.broadcast();
+      if (input.active && !s.pausedAt) this.privateInstructions();
+      return;
+    }
+    if (s.pausedAt) return;
     if (!s.players.some((u) => u.id === sender) || !s.joined.includes(sender))
       return;
     if (
@@ -1509,8 +1567,12 @@ export class PartyGames {
       this.broadcast();
       return;
     }
-    if (input.action === "draw-solved" && s.kind === "draw") {
+    if (
+      ["draw-solved", "draw-skip"].includes(input.action) &&
+      s.kind === "draw"
+    ) {
       s.solved = true;
+      s.skipped = input.action === "draw-skip";
       this.broadcast();
       return;
     }
@@ -1619,14 +1681,14 @@ export class PartyGames {
         if (
           Array.isArray(line) &&
           line.length === 5 &&
-          line.every(Number.isFinite)
+          line.every(Number.isFinite) &&
+          s.lines.length < 12000
         )
           s.lines.push(
             line.map((v, i) =>
               Math.round(clamp(v, 0, i % 2 === 1 ? 700 : i === 4 ? 3 : 1000)),
             ),
           );
-      s.lines = s.lines.slice(s.kind === "museum" ? -600 : -900);
     }
     if (s.kind === "beacon" && input.action === "rotate") {
       const i = Number(input.index);
@@ -1707,6 +1769,12 @@ export class PartyGames {
         );
         c.stars.push({
           index,
+          gesture:
+            typeof input.gesture === "string"
+              ? input.gesture.slice(0, 80)
+              : undefined,
+          holding: !!input.holding,
+          hold: clamp(Number(input.hold) || 0, 0, 5),
           power: clamp(input.power),
           until: Math.min(
             Date.now() + 18000,
@@ -1910,6 +1978,8 @@ export class PartyGames {
       ":" +
       f.stage +
       ":" +
+      !!f.public.paused +
+      ":" +
       (f.invitedAt || 0) +
       ":" +
       (f.public.index ?? 0) +
@@ -1924,7 +1994,9 @@ export class PartyGames {
       ":" +
       !!f.public.audioPaused +
       ":" +
-      !!f.public.readyPlayers?.includes(this.userId) +
+      (f.stage === "lobby"
+        ? (f.public.readyPlayers || []).join(",")
+        : !!f.public.readyPlayers?.includes(this.userId)) +
       ":" +
       f.kind +
       ":" +
@@ -1947,6 +2019,12 @@ export class PartyGames {
       f.public.dials?.[this.userId] +
       ":" +
       f.public.progressBy?.[this.userId];
+    const readiness = [
+      ...(f.public.readyPlayers || []),
+      ...(f.public.moduleReady || []),
+      ...(f.public.trialReady || []),
+      ...(f.public.approved || []),
+    ];
     if (force || document.querySelector("#party-panel")?.dataset.key !== key) {
       sheet(
         `<div id="party-panel" data-key="${esc(key)}"><div class="game-toolbar"><button class="btn text" data-party="focus">${icon("expand")} ${document.querySelector("#sheet").classList.contains("game-expanded") ? "Обычный вид" : "На весь экран"}</button></div><div id="party-live"></div><div id="party-controls"></div></div>`,
@@ -1961,7 +2039,7 @@ export class PartyGames {
         f.stage === "lobby" ||
         (f.kind === "beacon" && f.public.rulesVersion === BEACON_RULES)
           ? ""
-          : `<div class="game-presence" aria-label="Участники игры">${f.public.players?.map((u) => `<span>${esc(u.avatar)} ${esc(u.name)} · ${f.public.joined?.includes(u.id) ? "за столом" : "приглашён"}</span>`).join("") || ""}</div>`) +
+          : `<div class="game-presence" aria-label="Участники игры">${f.public.players?.map((u) => `<span>${esc(u.avatar)} ${esc(u.name)} · ${f.public.away?.includes(u.id) ? "отошёл" : readiness.includes(u.id) ? "Готов ✓" : f.public.joined?.includes(u.id) ? "за столом" : "приглашён"}</span>`).join("") || ""}</div>`) +
         partyScreen(f);
     this.updateLobby();
     if (["draw", "museum"].includes(f.kind)) this.paint();
@@ -2012,6 +2090,11 @@ export class PartyGames {
       p = f.public,
       box = document.querySelector("#party-controls");
     if (!box) return;
+    if (p.paused && !f.finished) {
+      box.innerHTML =
+        '<p class="fine center">Игра сохранена. Продолжим, когда все вернутся.</p>';
+      return;
+    }
     const member = p.players.some((u) => u.id === this.userId),
       secret = this.secrets.get(f.round + ":" + (p.turn || 0)) || {};
     let html = "";
@@ -2019,7 +2102,7 @@ export class PartyGames {
       html =
         '<button class="btn soft wide" data-action="close">Закрыть окно</button>';
     else if (f.stage === "lobby") {
-      html = `<button class="btn primary wide" data-party="ready">${p.readyPlayers?.includes(this.userId) ? "Отменить готовность" : "Готов"}</button><p class="muted center">${p.joined?.length || 1} за столом · начало после готовности всех</p>${this.hosting && ["soundgarden", "meditation"].includes(f.kind) ? '<button class="btn lavender wide" data-party="solo">Слушать одному · все пульты</button>' : ""}${this.hosting ? `<button class="btn soft wide" data-party="invite" ${f.invitedAt ? "disabled" : ""}>${f.invitedAt ? "Приглашение активно" : "Отправить приглашение"}</button><p class="fine center">Приглашение останется в играх до закрытия лобби и не прервёт другую игру.</p><button class="btn text wide" data-party="cancel-lobby">Закрыть лобби</button>` : ""}`;
+      html = `<button class="btn primary wide" data-party="ready">${p.readyPlayers?.includes(this.userId) ? "Отменить готовность" : "Готов"}</button><p class="muted center">${p.joined?.length || 1} за столом · начало после готовности всех</p>${this.hosting && ["soundgarden", "meditation"].includes(f.kind) ? '<button class="btn lavender wide" data-party="solo">Слушать одному · все пульты</button>' : this.hosting && deckKinds.includes(f.kind) ? '<button class="btn lavender wide" data-party="solo">Играть с одного телефона · ответы вслух</button>' : ""}${this.hosting ? `<button class="btn soft wide" data-party="invite" ${f.invitedAt ? "disabled" : ""}>${f.invitedAt ? "Приглашение активно" : "Отправить приглашение"}</button><p class="fine center">Приглашение останется в играх до закрытия лобби и не прервёт другую игру.</p><button class="btn text wide" data-party="cancel-lobby">Закрыть лобби</button>` : ""}`;
     } else if (f.kind === "race" && p.rulesVersion === CIRCUIT_VERSION)
       html = circuitControls(f, this.userId, secret);
     else if (f.kind === "beacon" && p.rulesVersion === BEACON_RULES)
@@ -2089,7 +2172,7 @@ export class PartyGames {
         ? `<div class="answer-reveal"><h3>Угадали!</h3><p>${esc(p.solution || "")}</p></div>`
         : p.drawer === this.userId
           ? `<div class="private-instructions"><small>Только вы видите задание</small><h3>${esc(secret.word || "Получаем карточку…")}</h3></div><canvas id="draw-pad" width="1000" height="700" aria-label="Рисовать подсказку"></canvas><div class="ink-colors">${["Лаванда", "Роза", "Мята", "Мёд"].map((c, i) => `<button data-party="ink-color" data-index="${i}" style="--ink:${["#6b527f", "#ed7798", "#5c9b8a", "#ce9b4b"][i]}">${c}</button>`).join("")}</div>`
-          : `<p class="game-instruction">Угадывайте вслух. Когда ответ найден, нажмите кнопку.</p><button class="btn primary wide" data-party="draw-solved">Угадали!</button>`;
+          : `<p class="game-instruction">Угадывайте вслух. Когда ответ найден, нажмите кнопку.</p><button class="btn primary wide" data-party="draw-solved">Угадали!</button><button class="btn soft wide" data-party="draw-skip">Пропустить · открыть ответ</button>`;
     else if (["meditation", "soundgarden"].includes(f.kind)) {
       if (
         f.kind === "meditation" &&
@@ -2198,11 +2281,13 @@ export class PartyGames {
       !s ||
       s.stage !== "lobby" ||
       s.joined.length < (s.solo ? 1 : s.kind === "museum" ? 3 : 2) ||
-      !s.players.every((u) => s.readyPlayers.includes(u.id))
+      !!s.away?.length ||
+      !s.joined.every((id) => s.readyPlayers.includes(id))
     )
       return false;
     if (s.kind === "rift" && !(this.peer?.onlineDisplays?.() > 0)) return false;
     if (this.peer?.gameCompatibility?.(2).length) return false;
+    s.players = s.players.filter((p) => s.joined.includes(p.id));
     if (s.kind === "race") initCircuit(s);
     if (s.kind === "beacon") initBeacon(s);
     if (expeditionKinds.includes(s.kind)) initExpedition(s);
@@ -2494,7 +2579,7 @@ export class PartyGames {
         this.state.joined = [this.userId];
         this.state.readyPlayers = [this.userId];
         if (this.state.kind === "meditation") arrangeMeditation(this.state);
-        else
+        else if (this.state.kind === "soundgarden")
           for (let i = 1; i < 4; i++)
             this.state.contributors[this.userId + ":voice" + i] = {
               layers: [1, 1, 1, 0, 0, 0, 0, 0],
@@ -2527,7 +2612,8 @@ export class PartyGames {
       if (
         action === "ready" ||
         action === "not-ready" ||
-        action === "draw-solved"
+        action === "draw-solved" ||
+        action === "draw-skip"
       ) {
         this.input({ action });
         return;
@@ -2694,6 +2780,7 @@ export class PartyGames {
           pictureWords[Math.floor(Math.random() * pictureWords.length)];
         s.lines = [];
         s.solved = false;
+        s.skipped = false;
         s.lastGuess = "";
         this.broadcast();
         this.privateInstructions();
@@ -2717,7 +2804,7 @@ export class PartyGames {
       ];
     };
     const flush = () => {
-      if (batch.length) {
+      while (batch.length) {
         this.input({ action: "ink", lines: batch.splice(0, 25) });
         lastSent = performance.now();
       }
@@ -2730,6 +2817,7 @@ export class PartyGames {
       if (!last) return;
       const next = point(e),
         line = [...last, ...next, this.inkColor || 0];
+      if (Math.hypot(next[0] - last[0], next[1] - last[1]) < 3) return;
       batch.push(line);
       const ctx = canvas.getContext("2d");
       ctx.strokeStyle = ["#6b527f", "#ed7798", "#5c9b8a", "#ce9b4b"][

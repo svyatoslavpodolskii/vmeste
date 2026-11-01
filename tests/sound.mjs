@@ -1,4 +1,4 @@
-﻿import { chromium } from "playwright";
+import { chromium } from "playwright";
 import assert from "node:assert/strict";
 const browser = await chromium.launch();
 try {
@@ -120,7 +120,7 @@ try {
     await sleep(240);
     const starGain = energy();
     const starQ = sound.nodes[0].filter.Q.value;
-    const starNode = sound.starPhrases.get("me:2");
+    const starNode = sound.starVoices.get("me:2");
     for (let i = 0; i < 30; i++) {
       star.power = 1;
       star.until = Date.now() + 4000;
@@ -128,8 +128,8 @@ try {
     }
     await sleep(220);
     const heldGain = energy();
-    const boundedStarVoices = sound.starPhrases.size;
-    const sameStarVoice = sound.starPhrases.get("me:2") === starNode;
+    const boundedStarVoices = sound.starVoices.size;
+    const sameStarVoice = sound.starVoices.get("me:2") === starNode;
     sound.destroy();
     // Boundary follows the original tail's adjacent samples, rather than jumping
     // back to the beginning of an unrelated random buffer.

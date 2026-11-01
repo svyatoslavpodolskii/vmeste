@@ -36,7 +36,7 @@ try {
       maxVoices = 0;
     for (let i = 0; i < 60; i++) {
       sound.apply(room, "0", "meditation");
-      maxVoices = Math.max(maxVoices, sound.activeNotes?.size || 0);
+      maxVoices = Math.max(maxVoices, sound.starVoices?.size || 0);
     }
     for (let i = 0; i < 12; i++) {
       await new Promise((resolve) => setTimeout(resolve, 400));
@@ -49,21 +49,23 @@ try {
       );
     }
     await new Promise((resolve) => setTimeout(resolve, 3000));
-    const settled = sound.activeNotes.size;
+    const released = [...sound.starVoices.values()].every(
+      (voice) => voice.gain.gain.value < 0.0005,
+    );
     sound.destroy();
     return {
       peak,
       rms,
       maxVoices,
-      settled,
+      released,
       afterClose: sound.activeNotes.size,
     };
   });
   assert.ok(
-    result.maxVoices <= 48 && result.maxVoices > 0,
+    result.maxVoices <= 24 && result.maxVoices > 0,
     JSON.stringify(result),
   );
-  assert.ok(result.settled < result.maxVoices, JSON.stringify(result));
+  assert.ok(result.released, JSON.stringify(result));
   assert.ok(result.rms > 0.00005 && result.peak < 0.8, JSON.stringify(result));
   assert.equal(result.afterClose, 0);
   console.log(

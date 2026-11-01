@@ -203,6 +203,21 @@ export function initCircuit(s, length = s.runLength || 8) {
     .slice(0, s.runLength)
     .map((t) => t.id);
   s.turn = 0;
+  // Start with visible, direct actions; the longer box keeps advanced trials.
+  if (s.runLength === 8)
+    s.route = shuffled(
+      [
+        "echo",
+        "catch",
+        "paths",
+        "wire",
+        "code",
+        "rhythm",
+        "sustain",
+        "parcels",
+      ],
+      random,
+    );
   s.teamScore = 0;
   s.journal = [];
   s.rulesVersion = CIRCUIT_VERSION;

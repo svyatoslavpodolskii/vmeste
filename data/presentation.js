@@ -79,6 +79,7 @@
 export const illustrations = [
   ["movie", "Кино"],
   ["music", "Музыка"],
+  ["sport", "Спорт"],
   ["quest", "Приключение"],
   ["questions", "Разговоры"],
   ["games", "Настолки"],

@@ -1,10 +1,10 @@
 // Cache version follows package.json. Cache is scoped to this installation path.
-const CACHE = "vmeste-4.3.2-" + self.registration.scope;
+const CACHE = "vmeste-4.4.0-" + self.registration.scope;
 const ASSETS = [
   "./",
   "./index.html",
   "./manifest.json",
-  "./js/update.js?v=4.3.2",
+  "./js/update.js?v=4.4.0",
   "./css/beacon.css",
   "./css/circuit.css",
   "./css/immersive.css",
@@ -26,6 +26,7 @@ const ASSETS = [
   "./js/game-pools.js",
   "./js/game-protocol.js",
   "./js/moments.js",
+  "./js/mood.js",
   "./js/party.js",
   "./js/peer.js",
   "./js/plans.js",
@@ -73,6 +74,7 @@ const ASSETS = [
   "./assets/quest.svg",
   "./assets/questions.svg",
   "./assets/space.svg",
+  "./assets/sport.svg",
   "./assets/stars.svg",
   "./assets/story.svg",
   "./assets/tea.svg",

@@ -1,4 +1,9 @@
-import { phraseNotes, compositionState, gardenPhrase } from "./composition.js";
+import {
+  phraseNotes,
+  compositionState,
+  gardenPhrase,
+  constellationTone,
+} from "./composition.js";
 import { quad } from "./sound-controls.js";
 export const soundLayers = [
   "Берег",
@@ -38,6 +43,8 @@ export class NatureSound {
     this.nodes = [];
     this.started = false;
     this.level = 0.65;
+    this.activeNotes = new Set();
+    this.starVoices = new Map();
   }
   async start() {
     if (this.context) {
@@ -48,7 +55,7 @@ export class NatureSound {
     }
     const Audio = window.AudioContext || window.webkitAudioContext;
     if (!Audio) throw Error("В этом браузере звук недоступен");
-    const ctx = (this.context = new Audio());
+    const ctx = (this.context = new Audio({ latencyHint: "playback" }));
     await ctx.resume();
     const rng = random(this.seed),
       sr = ctx.sampleRate;
@@ -57,7 +64,7 @@ export class NatureSound {
     const limiter = ctx.createDynamicsCompressor();
     limiter.threshold.value = -18;
     limiter.ratio.value = 3;
-    limiter.attack.value = 0.08;
+    limiter.attack.value = 0.003;
     limiter.release.value = 1.2;
     master.connect(limiter).connect(ctx.destination);
     const dry = ctx.createGain();
@@ -400,7 +407,7 @@ export class NatureSound {
     // Discrete, breathing phrases replace an indefinitely sustained high tone.
     // The third and fourth pads control musical density and spatial movement.
     this.nextMelody ||= 0;
-    if (t >= this.nextMelody) {
+    if (mode === "soundgarden" && t >= this.nextMelody) {
       const shared = compositionState(contributors);
       const phrases = entries
         .filter(([, c]) => c.slot !== -1)
@@ -459,21 +466,81 @@ export class NatureSound {
   spark(star, role, key) {
     const ctx = this.context,
       now = ctx.currentTime;
-    this.starPhrases ||= new Map();
-    const next = this.starPhrases.get(key) || 0;
-    if (next > now) return;
-    const notes = phraseNotes(
-      star.index,
-      this.settings.contributors,
-      star.power,
+    this.starVoices ||= new Map();
+    const previous = this.starVoices.get(key);
+    // A hold updates the envelope of ONE voice; it never adds another phrase.
+    if (previous && previous.gesture === star.gesture) {
+      if (previous.until === star.until) return;
+      previous.until = star.until;
+      previous.gain.gain.cancelAndHoldAtTime(now);
+      previous.gain.gain.setTargetAtTime(0.025 + star.power * 0.03, now, 0.12);
+      previous.gain.gain.setTargetAtTime(
+        0.0001,
+        now + (star.holding ? 0.4 : 0.12),
+        star.holding ? 0.65 : 0.45 + (star.hold || 0) * 0.55,
+      );
+      previous.filter.frequency.setTargetAtTime(
+        700 + star.power * 2600,
+        now,
+        0.3,
+      );
+      return;
+    }
+    if (previous && !star.gesture && previous.until >= star.until) return;
+    if (previous) {
+      previous.gain.gain.cancelScheduledValues(now);
+      previous.gain.gain.setTargetAtTime(0.0001, now, 0.08);
+      previous.osc.stop(now + 0.6);
+      previous.shimmer.stop(now + 0.6);
+    }
+    if (this.starVoices.size >= 24 && !previous) return;
+    const frequency = constellationTone(star.index, this.settings.contributors);
+    const osc = ctx.createOscillator(),
+      shimmer = ctx.createOscillator();
+    const gain = ctx.createGain(),
+      filter = ctx.createBiquadFilter(),
+      blend = ctx.createGain();
+    osc.type = star.index % 2 ? "sine" : "triangle";
+    osc.frequency.value = frequency;
+    shimmer.type = "sine";
+    shimmer.frequency.value = frequency * 2.003;
+    blend.gain.value = 0.12;
+    filter.type = "lowpass";
+    filter.frequency.value = 700 + star.power * 2600;
+    filter.Q.value = 0.45;
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(
+      0.025 + star.power * 0.03,
+      now + 0.035,
     );
-    this.starPhrases.set(key, now + Math.max(2.8, notes.at(-1).delay + 1.6));
-    for (const note of notes) this.note(note, now + note.delay);
+    gain.gain.setTargetAtTime(0.0001, now + 0.12, 0.65);
+    osc.connect(filter);
+    shimmer.connect(blend).connect(filter);
+    filter.connect(gain);
+    gain.connect(this.master);
+    gain.connect(this.reverb);
+    const voice = {
+      osc,
+      shimmer,
+      gain,
+      filter,
+      gesture: star.gesture,
+      until: star.until,
+    };
+    this.starVoices.set(key, voice);
+    osc.start(now);
+    shimmer.start(now);
+    osc.stop(now + 22);
+    shimmer.stop(now + 22);
+    osc.onended = () => {
+      for (const node of [osc, shimmer, blend, filter, gain]) node.disconnect();
+      if (this.starVoices.get(key) === voice) this.starVoices.delete(key);
+    };
   }
   note(note, at) {
     const ctx = this.context;
     this.activeNotes ||= new Set();
-    if (!ctx || ctx.state === "closed" || this.activeNotes.size >= 48) return;
+    if (!ctx || ctx.state === "closed" || this.activeNotes.size >= 24) return;
     const presets = [
       {
         attack: 0.32,

@@ -3,8 +3,8 @@
   const app = document.getElementById("app");
   const loading = () => !!app.querySelector(".loading");
   let shown = false;
-  function recover() {
-    if (shown || !loading()) return;
+  function recover(force = false) {
+    if (shown || (!force && !loading())) return;
     shown = true;
     app.innerHTML =
       '<main class="onboarding"><h1>Место почти готово</h1><p>Запуск задержался. Можно повторить или загрузить свежую версию. Комнаты, идеи и сердечки останутся на устройстве.</p><button class="btn primary" id="boot-retry">Попробовать снова</button><button class="btn soft" id="boot-refresh">Восстановить приложение</button><p id="boot-status" role="status"></p></main>';
@@ -41,6 +41,7 @@
       }
     };
   }
+  window.vmesteRecover = () => recover(true);
   setTimeout(recover, 15000);
   window.addEventListener("error", () => setTimeout(recover, 0), true);
   window.addEventListener("unhandledrejection", () => setTimeout(recover, 0));

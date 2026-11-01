@@ -358,6 +358,7 @@ export function bindSoundControls(party) {
   }
   for (const star of document.querySelectorAll("[data-constellation]")) {
     let started = 0,
+      gesture,
       timer;
     const stop = () => {
       if (!started) return;
@@ -369,6 +370,8 @@ export function bindSoundControls(party) {
       star.style.setProperty("--decay", `${1 + hold * 3}s`);
       party.input({
         action: "star",
+        gesture,
+        holding: false,
         voice: party.voice || 0,
         index: Number(star.dataset.constellation),
         power: Math.min(1, 0.55 + hold * 0.32),
@@ -381,10 +384,13 @@ export function bindSoundControls(party) {
     const start = () => {
       if (started) return;
       started = performance.now();
+      gesture = crypto.randomUUID();
       star.classList.add("holding");
       star.classList.remove("afterglow");
       party.input({
         action: "star",
+        gesture,
+        holding: true,
         voice: party.voice || 0,
         index: Number(star.dataset.constellation),
         power: 0.55,
@@ -400,6 +406,8 @@ export function bindSoundControls(party) {
         navigator.vibrate?.(Math.round(10 + hold * 3));
         party.input({
           action: "star",
+          gesture,
+          holding: true,
           voice: party.voice || 0,
           index: Number(star.dataset.constellation),
           power: Math.min(1, 0.55 + hold * 0.32),

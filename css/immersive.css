@@ -263,6 +263,12 @@
 }
 .inline-avatar-picker .avatar-preview {
   font-size: 22px;
+  line-height: 1;
+  margin: 0;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
 }
 .inline-avatar-picker summary {
   width: 44px;

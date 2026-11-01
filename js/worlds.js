@@ -13,6 +13,7 @@ const species = [
   ["coral", "Коралловый мак", "#d9909c"],
   ["blue", "Небесный колокольчик", "#98b6d4"],
   ["mint", "Мята", "#92bcae"],
+  ["unique", "Цветок пожелания", "#d9909c"],
 ];
 export const hash = (s) => {
   let n = 2166136261;
@@ -35,16 +36,20 @@ export function gardenState(store, now = Date.now()) {
       species.some((s) => s[0] === e.species)
     )
       plots.set(e.plot, { ...e, waters: 0 });
+  for (const event of events) {
+    const plot = plots.get(event.plot);
+    if (event.type === "water" && plot && event.at >= plot.at) plot.waters++;
+  }
   for (const p of plots.values()) {
-    p.waters = events.filter(
-      (e) => e.type === "water" && e.plot === p.plot && e.at >= p.at,
-    ).length;
     p.stage = Math.min(
       4,
       1 + Math.floor(Math.max(0, now - p.at) / 900000) + Math.min(2, p.waters),
     );
     p.bloom = p.stage === 4;
-    p.color = species.find((s) => s[0] === p.species)[2];
+    p.color =
+      p.species === "unique"
+        ? `hsl(${hash(p.plot) % 360} 55% 72%)`
+        : species.find((s) => s[0] === p.species)[2];
     p.name = species.find((s) => s[0] === p.species)[1];
   }
   return {
@@ -99,6 +104,11 @@ export function lettersState(store) {
   };
 }
 function flower(p) {
+  if (p.species === "unique") {
+    const seed = hash(p.plot),
+      count = 5 + (seed % 9);
+    return `<svg viewBox="0 0 120 130" class="garden-flower" aria-hidden="true"><path d="M60 122Q${40 + (seed % 40)} 90 60 52" stroke="#71967c" stroke-width="3" fill="none"/><path d="M59 100Q20 97 34 78Q53 80 59 100m2-12q35-2 22-24-20 0-22 24" fill="hsl(${90 + (seed % 65)} 28% 65%)"/>${p.stage >= 2 ? Array.from({ length: count }, (_, i) => `<ellipse cx="60" cy="${33 + (seed % 9)}" rx="${5 + ((seed >>> 4) % 9)}" ry="${14 + ((seed >>> 8) % 11)}" fill="hsl(${(seed + i * (seed % 7)) % 360} 58% ${64 + (i % 4) * 4}%)" transform="rotate(${(i * 360) / count} 60 53)"/>`).join("") : `<ellipse cx="60" cy="53" rx="9" ry="15" fill="${p.color}"/>`}<circle cx="60" cy="53" r="${5 + (seed % 5)}" fill="hsl(${35 + (seed % 30)} 80% 82%)"/></svg>`;
+  }
   return `<svg viewBox="0 0 120 130" class="garden-flower flower-${p.species}" style="--petal:${p.color};--growth:${p.stage}" aria-hidden="true"><path d="M60 121Q56 85 61 53" stroke="#7f9a78" fill="none" stroke-width="4"/><path d="M59 99Q25 100 31 77Q53 75 59 99m1-16q29 1 28-22-24 0-28 22" fill="#a8bd92"/>${p.stage >= 2 ? Array.from({ length: p.species === "sun" ? 9 : 5 }, (_, i) => `<ellipse cx="60" cy="35" rx="${p.species === "fern" ? 7 : 12}" ry="${14 + p.stage * 2}" fill="var(--petal)" transform="rotate(${i * (p.species === "sun" ? 40 : 72)} 60 55)"/>`).join("") : `<ellipse cx="61" cy="55" rx="10" ry="16" fill="var(--petal)"/>`}<circle cx="60" cy="55" r="${p.stage >= 3 ? 10 : 5}" fill="#f6e1ad"/>${p.bloom ? '<circle cx="96" cy="22" r="2" fill="#f7e6b7"/><circle cx="20" cy="60" r="3" fill="#f7e6b7"/>' : ""}</svg>`;
 }
 export function worldScreen(frame) {
@@ -106,7 +116,7 @@ export function worldScreen(frame) {
   if (frame.kind === "lettersworld")
     return `<section class="persistent-world letters-world"><span class="eyebrow">МОЖНО ОТВЕТИТЬ ПОЗЖЕ</span><h2>Между строк</h2><div class="letters-constellation" aria-hidden="true">${Array.from({ length: 8 }, (_, i) => `<span style="--n:${i}">${icon("letter")}</span>`).join("")}</div><p>${p.questionCount || 0} вопросов · ${p.answerCount || 0} ответов</p><p>Личные ответы остаются на ваших телефонах. А здесь — тихое место вашей переписки.</p></section>`;
   if (frame.kind === "gardenworld")
-    return `<section class="persistent-world garden-world"><span class="eyebrow">РАСТЁТ, ДАЖЕ КОГДА ВЫ ДАЛЕКО</span><h2>Сад встреч</h2><p>${p.bloom || 0} цветов распустилось · ${p.waters || 0} тёплых дождей</p><div class="garden-landscape">${(p.plots || []).map((plot) => `<article class="garden-plot">${flower(plot)}<strong>${esc(plot.name)}</strong><small>${esc(p.players?.find((u) => u.id === plot.author)?.name || "Ваш сад")} · ${plot.bloom ? "Цветёт" : "Растёт"}</small></article>`).join("") || '<div class="garden-empty"><span>🌱</span><h3>Здесь появится ваш общий сад</h3><p>Посадите первый росток на телефоне.</p></div>'}</div></section>`;
+    return `<section class="persistent-world garden-world"><span class="eyebrow">РАСТЁТ, ДАЖЕ КОГДА ВЫ ДАЛЕКО</span><h2>Сад встреч</h2><p>${p.bloom || 0} цветов распустилось · ${p.waters || 0} тёплых дождей</p><div class="garden-landscape">${(p.plots || []).map((plot) => `<article class="garden-plot">${flower(plot)}<strong>${esc(plot.name)}</strong>${plot.text ? `<p class="flower-wish">${esc(plot.text)}</p>` : ""}<small>${esc(p.players?.find((u) => u.id === plot.author)?.name || "Ваш сад")} · ${new Date(plot.at).toLocaleDateString("ru-RU")} · ${plot.bloom ? "Цветёт" : "Растёт"}</small></article>`).join("") || '<div class="garden-empty"><span>🌱</span><h3>Здесь появится ваш общий сад</h3><p>Посадите первый росток на телефоне.</p></div>'}</div></section>`;
   const known = new Set((p.tiles || []).map((t) => t.tile)),
     available = (n) =>
       known.has(n) ||
@@ -121,6 +131,19 @@ export class WorldGames {
     this.opened = false;
     this.kind = null;
     document.addEventListener("submit", (e) => {
+      if (e.target.id === "garden-wish-form") {
+        e.preventDefault();
+        const text = String(new FormData(e.target).get("text") || "").trim();
+        if (!text) return;
+        this.gardenPage = 0;
+        this.save({
+          type: "plant",
+          species: "unique",
+          plot: crypto.randomUUID(),
+          text: text.slice(0, 700),
+        }).catch((error) => toast(error.message));
+        return;
+      }
       if (!["world-question-form", "world-answer-form"].includes(e.target.id))
         return;
       e.preventDefault();
@@ -180,7 +203,7 @@ export class WorldGames {
       this.opened &&
       document.querySelector(".world-panel") &&
       !document.querySelector(
-        "#world-question-form:focus-within,#world-answer-form:focus-within",
+        "#world-question-form:focus-within,#world-answer-form:focus-within,#garden-wish-form:focus-within",
       )
     )
       this.render();
@@ -196,6 +219,14 @@ export class WorldGames {
       : this.kind === "gardenworld"
         ? gardenState(this.store)
         : atlasState(this.store, this.chapter);
+    if (this.kind === "gardenworld") {
+      state.total = state.plots.length;
+      state.page = this.gardenPage || 0;
+      state.plots = state.plots
+        .slice()
+        .reverse()
+        .slice(state.page * 24, (state.page + 1) * 24);
+    }
     return {
       kind: this.kind,
       roomId: this.store.roomId,
@@ -238,15 +269,17 @@ export class WorldGames {
       read = readIds(this.store),
       me = this.store.userId;
     if (this.lettersView === "compose")
-      return `<button class="btn text" data-world="letters-inbox">${icon("back")} Письма</button><form id="world-question-form"><label>О чём спросим?<textarea name="text" maxlength="700" required placeholder="Что сегодня сделало твой день чуть лучше?"></textarea></label><label>Кому<select name="target"><option value="">Нашему кругу</option>${this.store.users
-        .filter((u) => u.localUserId !== me)
-        .map(
-          (u) =>
-            `<option value="${esc(u.localUserId)}">${esc(u.displayName)}</option>`,
-        )
-        .join(
-          "",
-        )}</select></label><button class="btn primary wide" type="submit">Оставить вопрос</button><p class="fine">Он сохранится здесь и прилетит вашему человеку при следующем обмене данными. Торопиться с ответом не нужно.</p></form>`;
+      return `<button class="btn text" data-world="letters-inbox">${icon("back")} Письма</button><form id="world-question-form"><label>О чём спросим?<textarea name="text" maxlength="700" required placeholder="Что сегодня сделало твой день чуть лучше?"></textarea></label>${
+        this.store.authCapacity > 2
+          ? `<label>Кому<select name="target"><option value="">Нашему кругу</option>${this.store.users
+              .filter((u) => u.localUserId !== me)
+              .map(
+                (u) =>
+                  `<option value="${esc(u.localUserId)}">${esc(u.displayName)}</option>`,
+              )
+              .join("")}</select></label>`
+          : ""
+      }<button class="btn primary wide" type="submit">Оставить вопрос</button><p class="fine">Он сохранится здесь и прилетит вашему человеку при следующем обмене данными. Торопиться с ответом не нужно.</p></form>`;
     if (this.thread) {
       const question = state.questions.find((q) => q.id === this.thread);
       if (!question) {
@@ -309,11 +342,13 @@ export class WorldGames {
     } else document.querySelector("#sheet").scrollTop = 0;
   }
   gardenControls(p) {
-    const own = p.plots.filter((b) => b.author === this.store.userId),
-      free = [0, 1, 2, 3].find(
-        (i) => !own.some((p) => p.plot === this.store.userId + ":" + i),
-      );
-    return `<div class="world-action-heading"><h3>Ваши ростки</h3><span>${own.length} / 4</span></div>${free != null ? `<p>Выберите семя. Сосед увидит новый росток после обмена изменениями.</p><div class="seed-palette">${species.map(([id, name, color]) => `<button data-world="plant" data-species="${id}"><i style="background:${color}"></i><span>${name}</span></button>`).join("")}</div>` : ""}<h3>Тёплый дождь</h3><div class="garden-water-list">${p.plots.map((plot) => `<button class="btn soft" data-world="water" data-plot="${esc(plot.plot)}">${icon("water")} Полить ${esc(plot.name)}</button>`).join("") || "<p>Сначала посадите семя.</p>"}</div><p class="fine">Растения растут и без открытого приложения. Вода ускоряет рост; одному цветку достаточно одного полива от каждого человека за четыре часа.</p>`;
+    return `<form id="garden-wish-form"><h3>Вырастить тёплые слова</h3><label>Пожелание, благодарность или мысль дня<textarea name="text" maxlength="700" required placeholder="Пусть у тебя сегодня будет повод улыбнуться…"></textarea></label><p class="fine">Из этих слов вырастет единственный цветок — со своим цветом и лепестками. Дата и автор останутся рядом.</p><button class="btn primary wide" type="submit">Посадить пожелание ${icon("plant")}</button></form><div class="letters-toolbar"><button class="btn soft" data-world="garden-newer" ${!p.page ? "disabled" : ""}>Новые цветы</button><span>${p.total} в саду</span><button class="btn soft" data-world="garden-older" ${(p.page + 1) * 24 >= p.total ? "disabled" : ""}>Раньше</button></div><h3>Тёплый дождь</h3><div class="garden-water-list">${p.plots
+      .filter((plot) => !plot.bloom)
+      .map(
+        (plot) =>
+          `<button class="btn soft" data-world="water" data-plot="${esc(plot.plot)}">${icon("water")} Полить ${esc(plot.name)}</button>`,
+      )
+      .join("")}</div>`;
   }
   atlasControls(p) {
     const known = new Set(p.tiles.map((t) => t.tile)),
@@ -349,6 +384,15 @@ export class WorldGames {
   async action(b) {
     if (!this.kind) return;
     const action = b.dataset.world;
+    if (action === "garden-newer" || action === "garden-older") {
+      this.gardenPage = Math.max(
+        0,
+        (this.gardenPage || 0) + (action === "garden-older" ? 1 : -1),
+      );
+      this.render();
+      document.querySelector("#sheet").scrollTop = 0;
+      return;
+    }
     if (action === "letters-compose") {
       this.lettersView = "compose";
       this.thread = null;

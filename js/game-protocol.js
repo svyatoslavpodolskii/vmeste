@@ -1,5 +1,30 @@
 // Everyone chooses the same lobby; a started table wins against a duplicate invitation.
 export const GAME_PROTOCOL = 2;
+export function updateGamePresence(state, member, active, now = Date.now()) {
+  state.away = (state.away || []).filter((id) => id !== member);
+  if (!active) {
+    state.away.push(member);
+    state.readyPlayers = (state.readyPlayers || []).filter(
+      (id) => id !== member,
+    );
+  }
+  if (
+    state.stage !== "running" ||
+    ["soundgarden", "meditation"].includes(state.kind)
+  )
+    return;
+  if (state.away.length && !state.pausedAt) state.pausedAt = now;
+  if (!state.away.length && state.pausedAt) {
+    const delay = Math.max(0, now - state.pausedAt);
+    for (const object of [state, state.q, state.machine])
+      if (object)
+        for (const key of ["started", "clockStart", "deadline"])
+          if (Number.isFinite(object[key])) object[key] += delay;
+    for (const [key, time] of Object.entries(state.deck?.deadlines || {}))
+      state.deck.deadlines[key] = time + delay;
+    state.pausedAt = 0;
+  }
+}
 export function chooseGame(current, incoming) {
   if (
     current?.round === incoming?.round &&

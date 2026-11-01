@@ -108,11 +108,14 @@ export function deckCommand(s, sender, input, store) {
     d.phases[i] = (d.phases[i] || 0) + 1;
   } else if (
     input.action === "deck-choice" &&
-    s.kind === "choice" &&
+    ["choice", "likely"].includes(s.kind) &&
     !d.reveals[i] &&
-    [0, 1].includes(Number(input.value))
+    (s.kind === "choice"
+      ? [0, 1].includes(Number(input.value))
+      : s.players.some((p) => p.id === input.value))
   ) {
-    (d.choices[i] ||= {})[sender] = Number(input.value);
+    (d.choices[i] ||= {})[sender] =
+      s.kind === "choice" ? Number(input.value) : input.value;
     if (s.players.every((u) => Object.hasOwn(d.choices[i], u.id)))
       d.reveals[i] = true;
   } else if (
@@ -138,7 +141,7 @@ export function deckCommand(s, sender, input, store) {
 }
 export function deckScreen(f) {
   const p = f.public;
-  return `<div class="shared-deck"><span class="eyebrow">${esc(p.activeName || "Ваш ход")} · ${p.index + 1} / ${p.total}</span><div class="table-card"><span class="card-suit">${icon("games")}</span><p>${p.done ? "Вся колода сыграна" : !p.selected ? "Правда или действие?" : esc(p.card)}</p></div>${p.answer ? `<div class="answer-reveal"><h3>Разгадка</h3><p>${esc(p.answer)}</p></div>` : ""}${f.kind === "choice" ? (p.revealed ? `<div class="door-results">${p.players.map((u) => `<span>${esc(u.name)} · ${p.choices[u.id] === 0 ? "Левая дверь" : "Правая дверь"}</span>`).join("")}</div><p>Выборы открыты. Обсуждайте столько, сколько хочется.</p>` : `<p>${p.voted.length} / ${p.players.length} выбрали · раскроем одновременно</p>`) : ""}</div>`;
+  return `<div class="shared-deck"><span class="eyebrow">${esc(p.activeName || "Ваш ход")} · ${p.index + 1} / ${p.total}</span><div class="table-card"><span class="card-suit">${icon("games")}</span><p>${p.done ? "Вся колода сыграна" : !p.selected ? "Правда или действие?" : esc(p.card)}</p></div>${p.answer ? `<div class="answer-reveal"><h3>Разгадка</h3><p>${esc(p.answer)}</p></div>` : ""}${f.kind === "likely" && !p.solo ? (p.revealed ? `<div class="door-results">${p.players.map((u) => `<span>${esc(u.name)} → ${esc(p.players.find((v) => v.id === p.choices[u.id])?.name || "—")}</span>`).join("")}</div><p>Ответы открыты одновременно. Что вас удивило?</p>` : `<p>${p.voted.length} / ${p.players.length} выбрали · раскроем одновременно</p>`) : ""}${f.kind === "choice" ? (p.revealed ? `<div class="door-results">${p.players.map((u) => `<span>${esc(u.name)} · ${p.choices[u.id] === 0 ? "Левая дверь" : "Правая дверь"}</span>`).join("")}</div><p>Выборы открыты. Обсуждайте столько, сколько хочется.</p>` : `<p>${p.voted.length} / ${p.players.length} выбрали · раскроем одновременно</p>`) : ""}</div>`;
 }
 export function deckControls(f, user, secret = {}) {
   const p = f.public,
@@ -154,10 +157,12 @@ export function deckControls(f, user, secret = {}) {
           ? p.active === user
             ? `<div class="door-buttons">${b("Правда", "deck-pick", 'data-value="truth"')}${b("Действие", "deck-pick", 'data-value="dare"')}</div>`
             : `<p>Сейчас выбирает ${esc(p.activeName)}.</p>`
-          : f.kind === "choice" && !p.revealed
-            ? `<div class="door-buttons">${b("Левая дверь", "deck-choice", 'data-value="0"')}${b("Правая дверь", "deck-choice", 'data-value="1"')}</div><p>${p.voted.includes(user) ? "Ваш выбор принят. Можно изменить до раскрытия." : "Коснитесь двери. Чужой выбор пока скрыт."}</p>`
-            : f.kind === "riddles" && !p.revealed
-              ? `<p>Задавайте вопросы вслух. Ведущий отвечает «да», «нет» или «неважно».</p>${p.active === user ? `<details class="private-instructions"><summary>Тайный ответ ведущего</summary><p>${esc(secret.answer || "Получаем ответ…")}</p></details>${b("Показать разгадку всем", "deck-reveal")}` : "<p>Разгадку откроет ведущий.</p>"}`
-              : "";
-  return `${content}<div class="deck-navigation">${b(icon("back") + " Назад", "deck-back", p.index ? "" : "disabled")}${b("Дальше " + icon("arrow"), "deck-next", !p.selected || (f.kind === "choice" && !p.revealed) ? "disabled" : "")}</div><p class="fine">Один стол, одна колода. Возвращайтесь на любую предыдущую карточку.</p>`;
+          : f.kind === "likely" && !p.solo && !p.revealed
+            ? `<div class="door-buttons">${p.players.map((person) => b(esc(person.name), "deck-choice", `data-value="${esc(person.id)}"`)).join("")}</div><p>${p.voted.includes(user) ? "Ваш выбор сохранён. Ждём остальных." : "Выберите человека — ответы пока скрыты."}</p>`
+            : f.kind === "choice" && !p.revealed
+              ? `<div class="door-buttons">${b("Левая дверь", "deck-choice", 'data-value="0"')}${b("Правая дверь", "deck-choice", 'data-value="1"')}</div><p>${p.voted.includes(user) ? "Ваш выбор принят. Можно изменить до раскрытия." : "Коснитесь двери. Чужой выбор пока скрыт."}</p>`
+              : f.kind === "riddles" && !p.revealed
+                ? `<p>Задавайте вопросы вслух. Ведущий отвечает «да», «нет» или «неважно».</p>${p.active === user ? `<details class="private-instructions"><summary>Тайный ответ ведущего</summary><p>${esc(secret.answer || "Получаем ответ…")}</p></details>${b("Показать разгадку всем", "deck-reveal")}` : "<p>Разгадку откроет ведущий.</p>"}`
+                : "";
+  return `${content}<div class="deck-navigation">${b(icon("back") + " Назад", "deck-back", p.index ? "" : "disabled")}${b("Дальше " + icon("arrow"), "deck-next", !p.selected || (["choice", "likely"].includes(f.kind) && !p.solo && !p.revealed) ? "disabled" : "")}</div><p class="fine">Один стол, одна колода. Возвращайтесь на любую предыдущую карточку.</p>`;
 }

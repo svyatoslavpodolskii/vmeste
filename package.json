@@ -1,11 +1,11 @@
 {
   "name": "vmeste",
-  "version": "4.3.2",
+  "version": "4.4.0",
   "private": true,
   "type": "module",
   "scripts": {
     "start": "node scripts/serve.mjs",
-    "test": "node tests/core.test.mjs && node tests/auth.test.mjs && node tests/games4.test.mjs && node tests/worlds.test.mjs && node tests/turns.test.mjs && node tests/circuit.test.mjs && node tests/session-protocol.test.mjs && node tests/beacon.test.mjs && node tests/composition.test.mjs",
+    "test": "node tests/core.test.mjs && node tests/auth.test.mjs && node tests/games4.test.mjs && node tests/worlds.test.mjs && node tests/turns.test.mjs && node tests/circuit.test.mjs && node tests/session-protocol.test.mjs && node tests/beacon.test.mjs && node tests/composition.test.mjs && node tests/boot.test.mjs && node tests/repairs.test.mjs",
     "test:browser": "node tests/browser.mjs",
     "test:rooms": "node tests/rooms-live.mjs",
     "test:party": "node tests/revision4.mjs",
@@ -21,7 +21,8 @@
     "test:circuit": "node tests/circuit-live.mjs",
     "test:sessions": "node tests/sessions-live.mjs",
     "test:beacon": "node tests/beacon-live.mjs",
-    "test:compat": "node tests/compatibility-live.mjs"
+    "test:compat": "node tests/compatibility-live.mjs",
+    "test:repairs": "node tests/boot-live.mjs && node tests/repairs-live.mjs"
   },
   "devDependencies": {
     "fake-indexeddb": "6.2.4",

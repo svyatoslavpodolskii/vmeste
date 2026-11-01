@@ -21,6 +21,8 @@ import { RoomAuth } from "./auth.js";
 import { Database } from "./db.js";
 import { Store } from "./store.js";
 import { RoomPeer } from "./peer.js";
+import { NatureSound } from "./sound.js";
+import { MoodJournal } from "./mood.js";
 import {
   esc,
   icon,
@@ -62,6 +64,55 @@ import {
   riddles,
 } from "../data/games.js";
 const app = document.querySelector("#app");
+const greetedRooms = new Set();
+let projectorAudio,
+  projectorAudioEnabled = false,
+  projectorRound;
+function updateProjectorAudio(frame) {
+  const musical =
+    frame &&
+    !frame.ownerOffline &&
+    !frame.finished &&
+    frame.stage === "running" &&
+    ["soundgarden", "meditation"].includes(frame.kind);
+  if (!musical || !projectorAudioEnabled) {
+    projectorAudio?.destroy();
+    projectorAudio = null;
+    projectorRound = null;
+    return;
+  }
+  if (projectorRound !== frame.round) {
+    projectorAudio?.destroy();
+    projectorAudio = new NatureSound(frame.round + ":screen");
+    projectorRound = frame.round;
+  }
+  const audio = projectorAudio;
+  if (frame.public.audioPaused) {
+    audio.stop();
+    return;
+  }
+  audio
+    .start()
+    .then(() => {
+      if (projectorAudio === audio)
+        audio.apply(
+          frame.public.contributors || {},
+          Object.keys(frame.public.contributors || {})[0],
+          frame.kind,
+        );
+    })
+    .catch(() =>
+      toast("Нажмите «Звук экрана», чтобы разрешить воспроизведение"),
+    );
+}
+document.addEventListener("click", (event) => {
+  if (!event.target.closest('[data-action="projector-sound"]')) return;
+  projectorAudioEnabled = !projectorAudioEnabled;
+  updateProjectorAudio(state.screenFrame);
+  event.target.closest("button").textContent = projectorAudioEnabled
+    ? "Выключить звук экрана"
+    : "Звук экрана";
+});
 document.addEventListener("change", (e) => {
   captureProfileDraft(e);
   if (e.target.matches("[data-catalogue-filter]")) {
@@ -131,23 +182,43 @@ const state = {
   draft: [],
 };
 const worlds = new WorldGames({ store: () => store, peer: () => peer });
+const moodJournal = new MoodJournal(() => store);
 const turns = new TurnGames({ store: () => store, peer: () => peer });
+const frameLayouts = new Map();
+function rememberGameFrame(frame) {
+  state.invites ||= {};
+  state.invites[frame.kind] = frame;
+  const layout = JSON.stringify([
+    frame.round,
+    frame.stage,
+    frame.finished,
+    frame.ownerOffline,
+    frame.invitedAt,
+    frame.public?.joined,
+    frame.public?.readyPlayers,
+    frame.public?.away,
+  ]);
+  const changed = frameLayouts.get(frame.kind) !== layout;
+  frameLayouts.set(frame.kind, layout);
+  // Incoming instrument gestures must not rebuild the whole catalogue underneath
+  // the player several times a second on a phone's main thread.
+  if (
+    changed &&
+    !document.querySelector("#sheet").open &&
+    store?.authEstablished
+  )
+    render();
+}
 const party = new PartyGames({
   store: () => store,
   peer: () => peer,
   soundSeed: () => `${roomId}:${userId}:${roomAuth?.record.publicKey.x}`,
   onInvite: (frame) => {
-    state.invites ||= {};
-    state.invites[frame.kind] = frame;
-    if (!document.querySelector("#sheet").open && store?.authEstablished)
-      render();
+    rememberGameFrame(frame);
   },
   onFrame: (frame) => {
-    state.invites ||= {};
-    state.invites[frame.kind] = frame;
     state.partyFrame = frame;
-    if (!document.querySelector("#sheet").open && store?.authEstablished)
-      render();
+    rememberGameFrame(frame);
   },
 });
 function updateUnread() {
@@ -161,7 +232,9 @@ function updateUnread() {
 window.addEventListener("vmeste-unread", updateUnread);
 function screenTabs() {
   return `<div class="screen-tabs">${[...(peer?.games?.values() || [])]
-    .filter((f) => !f.finished || f.kind === "exhibitworld")
+    .filter(
+      (f) => (!f.finished && !f.ownerOffline) || f.kind === "exhibitworld",
+    )
     .map(
       (f) =>
         `<button class="btn ${state.screenFrame?.kind === f.kind ? "lavender" : "soft"}" data-action="screen-game" data-id="${esc(f.kind)}">${esc(f.title)}</button>`,
@@ -175,7 +248,8 @@ function render() {
   }
   if (store.authEstablished && (store.authViewer || state.screenOnly)) {
     const f = state.screenFrame;
-    app.innerHTML = `<main class="projector"><header><span>${roomSymbols(roomId)}</span>${btn("Мои комнаты", "rooms", "text")}${!store.authViewer ? btn("Играть здесь", "client-mode", "text") : ""}${btn("На весь экран", "fullscreen", "text")}</header><div class="projector-card"><span class="eyebrow">ОБЩИЙ ЭКРАН</span><div class="projector-live">${screenTabs()}${f ? partyScreen(f, true) : `<h1>Экран готов</h1><p>Начните игру на телефоне. Здесь появится общая карточка — без скрытых ответов и личных данных.</p>`}</div></div><footer>Управление остаётся на телефоне</footer></main>`;
+    updateProjectorAudio(f);
+    app.innerHTML = `<main class="projector"><header><span>${roomSymbols(roomId)}</span>${btn("Мои комнаты", "rooms", "text")}${!store.authViewer ? btn("Играть здесь", "client-mode", "text") : ""}${btn("На весь экран", "fullscreen", "text")}${btn(projectorAudioEnabled ? "Выключить звук экрана" : "Звук экрана", "projector-sound", "soft")}</header><div class="projector-card"><span class="eyebrow">ОБЩИЙ ЭКРАН</span><div class="projector-live">${screenTabs()}${f ? partyScreen(f, true) : `<h1>Экран готов</h1><p>Начните игру на телефоне. Здесь появится общая карточка — без скрытых ответов и личных данных.</p>`}</div></div><footer>Управление остаётся на телефоне</footer></main>`;
     return;
   }
   if (store.authEstablished === false) {
@@ -207,11 +281,11 @@ function render() {
   app.innerHTML = `<div class="app-shell ${store.authCapacity > 2 ? "friends-theme" : ""}">${header(state)}<main id="main">${Object.values(
     state.invites || {},
   )
-    .filter((f) => !f.finished)
+    .filter((f) => !f.finished && !f.ownerOffline)
     .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0))
     .map(
       (f) =>
-        `<aside class="live-game-banner"><span class="live-game-symbol">${icon(["meditation", "soundgarden"].includes(f.kind) ? "music" : "games")}</span><span><strong>${esc(f.title)}</strong><small>${esc(store.users.find((u) => u.localUserId === f.controller)?.displayName || "Ваш человек")} · ${f.stage === "lobby" ? "собирает игроков" : "игра продолжается"}</small></span>${btn(f.public?.joined?.includes(userId) ? "Вернуться" : "Войти", "open-live-game", "soft", `data-id="${esc(f.kind)}"`)}${f.controller === userId && f.public?.joined?.length === 0 ? btn("Завершить", "end-empty-game", "text", `data-id="${esc(f.kind)}"`) : ""}</aside>`,
+        `<aside class="live-game-banner"><span class="live-game-symbol">${icon(["meditation", "soundgarden"].includes(f.kind) ? "music" : "games")}</span><span><strong>${esc(f.title)}</strong><small>${esc(store.users.find((u) => u.localUserId === f.controller)?.displayName || "Ваш человек")} · ${f.public?.away?.includes(f.controller) ? "ведущий отошёл" : f.stage === "lobby" ? "собирает игроков" : "игра продолжается"}</small></span>${btn(f.public?.joined?.includes(userId) ? "Вернуться" : "Войти", "open-live-game", "soft", `data-id="${esc(f.kind)}"`)}${f.controller === userId && f.public?.joined?.length === 0 ? btn("Завершить", "end-empty-game", "text", `data-id="${esc(f.kind)}"`) : ""}</aside>`,
     )
     .join(
       "",
@@ -351,7 +425,7 @@ async function enter(room, name, avatar = "🌷", creator = false, options = {})
         approvalResolve = null;
         approvalClient = null;
         closeSheet();
-        resolve(false);
+        resolve(null);
       }
     },
     onWaiting: (info) => {
@@ -404,6 +478,8 @@ async function enter(room, name, avatar = "🌷", creator = false, options = {})
       render();
     },
     onConnected: () => {
+      if (greetedRooms.has(roomId)) return;
+      greetedRooms.add(roomId);
       state.connectedIntro = true;
       toast("Вы снова вместе ✨");
       render();
@@ -415,6 +491,8 @@ async function enter(room, name, avatar = "🌷", creator = false, options = {})
   });
   matchIds = new Set(store.matches.map((i) => i.id));
   store.addEventListener("change", (e) => {
+    if (e.detail.entries.some((entry) => entry.record.moodEntry))
+      moodJournal.changed();
     if (e.detail.entries.some((e) => e.record.worldEvent)) {
       worlds.changed(e.detail.entries);
       if (
@@ -426,6 +504,7 @@ async function enter(room, name, avatar = "🌷", creator = false, options = {})
     const newMatches = store.matches.filter((i) => !matchIds.has(i.id));
     matchIds = new Set(store.matches.map((i) => i.id));
     if (newMatches.length) {
+      updateUnread();
       toast("Совпало! " + newMatches[0].title);
       document.querySelector("#toast")?.classList.add("match-toast");
       setTimeout(
@@ -874,7 +953,10 @@ async function action(a, el) {
       const event = activityEvents(store).find(
         (e) => e.id === el.dataset.event,
       );
-      if (event?.world === TURN_WORLD) turns.open(event);
+      if (event?.world === "matches") {
+        markRead(store, [event.id]);
+        detail(event.idea);
+      } else if (event?.world === TURN_WORLD) turns.open(event);
       else if (event) worlds.openEvent(event);
       break;
     }
@@ -1659,9 +1741,8 @@ try {
       await enter(roomId);
     else render();
   } else render();
-} catch {
-  app.innerHTML =
-    '<main class="onboarding"><h1>Не получилось открыть хранилище</h1><p>Разрешите сайту сохранять данные и обновите страницу. Ваши идеи не будут потеряны из-за несохранённых изменений.</p><button class="btn primary" onclick="location.reload()">Попробовать снова</button></main>';
+} catch (error) {
+  app.innerHTML = `<main class="onboarding"><h1>Не получилось открыть комнату</h1><p>${esc(error.message || "Хранилище временно недоступно. Закройте другие окна приложения и повторите запуск.")}</p><p>Сохранённые данные остаются на устройстве.</p><button class="btn primary" onclick="location.reload()">Попробовать снова</button><button class="btn soft" onclick="window.vmesteRecover?.()">Восстановить приложение</button></main>`;
 }
 
 let press,
@@ -1807,15 +1888,33 @@ window.addEventListener("vmeste-game-view", (e) => {
   ) {
     state.screenKind = incoming.kind;
     state.screenFrame = incoming;
-  } else if (state.screenKind)
-    state.screenFrame = peer?.games?.get(state.screenKind) || incoming;
-  else if (
-    !["soundgarden", "meditation"].includes(incoming.kind) ||
-    !state.screenFrame ||
-    ["soundgarden", "meditation"].includes(state.screenFrame.kind)
-  )
-    state.screenFrame = incoming;
+  } else {
+    const candidates = [...(peer?.games?.values() || []), incoming]
+      .filter(
+        (f) =>
+          !f.finished &&
+          !f.ownerOffline &&
+          ["lobby", "running"].includes(f.stage),
+      )
+      .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    const newest = candidates[0];
+    if (
+      newest &&
+      (!state.screenFrame ||
+        state.screenFrame.finished ||
+        state.screenFrame.ownerOffline ||
+        newest.createdAt > (state.screenFrame.createdAt || 0))
+    ) {
+      state.screenKind = newest.kind;
+      state.screenFrame = newest;
+    } else if (incoming.round === state.screenFrame?.round) {
+      state.screenFrame = incoming;
+    } else if (state.screenKind) {
+      state.screenFrame = peer?.games?.get(state.screenKind) || incoming;
+    } else state.screenFrame = incoming;
+  }
   if (store?.authViewer || state.screenOnly) {
+    updateProjectorAudio(state.screenFrame);
     const live = document.querySelector(".projector-live");
     if (live)
       live.innerHTML = screenTabs() + partyScreen(state.screenFrame, true);

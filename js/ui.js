@@ -8,6 +8,7 @@ export const esc = (v) =>
       ],
   );
 const paths = {
+  sport: "M5 7v10M2 9v6m17-8v10m3-8v6M5 12h14",
   book: "M12 5Q7 1 2 4v16q5-3 10 1 5-4 10-1V4q-5-3-10 1Zm0 0v16M5 7l4 1M5 11l4 1m6-4 4-1m-4 5 4-1",
   sun: "M12 2v2m0 16v2M2 12h2m16 0h2M5 5l2 2m10 10 2 2M5 19l2-2M17 7l2-2M17 12a5 5 0 1 1-10 0 5 5 0 0 1 10 0Z",
   music:

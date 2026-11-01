@@ -120,3 +120,21 @@ test("garden exposes four useful panels per performer and meditation six distinc
   assert.equal((b.match(/data-constellation=/g) || []).length, 6);
   assert.ok(!a.includes("undefined") && !b.includes("undefined"));
 });
+
+test("twelve short-note keys have distinct stable harmonious pitches regardless of gesture history", async () => {
+  const { constellationTone } = await import("../js/composition.js");
+  const room = {
+    a: { pads: [[0.4, 0.5]], memory: [0, 0, 0, 0] },
+    b: { pads: [[0.6, 0.3]] },
+  };
+  const tones = Array.from({ length: 12 }, (_, i) =>
+    constellationTone(i, room),
+  );
+  assert.equal(new Set(tones).size, 12);
+  assert.ok(tones.every((v, i) => !i || v > tones[i - 1]));
+  room.a.memory = [0.6, 0.9, 0.2, 0.8];
+  assert.deepEqual(
+    Array.from({ length: 12 }, (_, i) => constellationTone(i, room)),
+    tones,
+  );
+});

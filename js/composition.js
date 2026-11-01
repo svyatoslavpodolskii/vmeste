@@ -69,6 +69,13 @@ export function phraseNotes(index, contributors, power = 0.5) {
   }));
 }
 
+// A playable shared pentatonic keyboard: touching a symbol always starts ONE
+// pitch. Gesture history changes the ambient garden, not the keys under fingers.
+export function constellationTone(index, contributors) {
+  const degree = [0, 2, 4, 7, 9, 12, 14, 16, 19, 21, 24, 26][index % 12];
+  return 440 * 2 ** ((compositionState(contributors).root + degree - 69) / 12);
+}
+
 // A small generative score: each performer supplies a motif, the other pads
 // choose its common scale and answer. A 24-second chapter changes the contour
 // even when nobody moves a control. No random notes outside the shared scale.

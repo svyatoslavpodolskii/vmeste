@@ -76,32 +76,15 @@ try {
   }
   await open(a, "questions");
   await close(a);
-  await open(a, "choice");
-  await close(a);
-  await close(b);
-  await b.waitForFunction(() =>
-    [...document.querySelectorAll(".live-game-banner")].every(
-      (e) => !e.textContent.includes("Между нами"),
-    ),
-  );
-  assert.equal(await a.locator(".live-game-banner").count(), 1);
-  await open(b, "beacon");
-  await b.locator('[data-party="beacon-start"][data-length="3"]').click();
-  await b.locator('[data-party="invite"]').click();
-  await close(b);
   await a.waitForFunction(
-    () => document.querySelectorAll(".live-game-banner").length === 2,
+    () => document.querySelectorAll(".live-game-banner").length === 0,
   );
-  assert.equal(await a.locator(".game-invitation").count(), 0);
-  await a.locator('[data-action="end-empty-game"][data-id="choice"]').click();
-  await a.waitForFunction(
-    () => document.querySelectorAll(".live-game-banner").length === 1,
-  );
+  await close(b);
   await b.waitForFunction(
-    () => document.querySelectorAll(".live-game-banner").length === 1,
+    () => document.querySelectorAll(".live-game-banner").length === 0,
   );
   console.log(
-    "PASS one host per device, all real invitations visible, closed older table does not hide a newer one",
+    "PASS leaving a hosted lobby closes its invitation on both phones",
   );
   await open(a, "meditation");
   await a.locator('[data-party="solo"]').click();

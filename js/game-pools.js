@@ -9,11 +9,28 @@
 import { mimeCards } from "../data/presentation.js";
 export function gamePool(store, kind) {
   const own = store.data.customTasks.filter((t) => !t.deletedAt);
+  const letters = store.data.plans.filter(
+    (p) => !p.deletedAt && p.worldEvent?.world === "lettersworld",
+  );
+  const answered = new Set(
+    letters
+      .filter((p) => p.worldEvent.type === "answer")
+      .map((p) => p.worldEvent.question),
+  );
+  const sharedQuestions = letters
+    .filter(
+      (p) =>
+        p.worldEvent.type === "question" &&
+        !p.worldEvent.target &&
+        answered.has(p.id),
+    )
+    .map((p) => p.worldEvent.text);
   const questionPool = [
     ...new Set(
       [
         ...questions,
         ...truths,
+        ...sharedQuestions,
         ...own
           .filter((t) => ["question", "truth"].includes(t.kind))
           .map((t) => t.title),
@@ -62,6 +79,19 @@ export function cardKey(item) {
 }
 export function playedHistory(store) {
   const out = {};
+  for (const p of store.data.plans.filter((p) => !p.deletedAt)) {
+    const event = p.worldEvent;
+    if (event?.world === "lettersworld" && event.type === "answer") {
+      const question = store.data.plans.find(
+        (q) => q.id === event.question && !q.deletedAt,
+      )?.worldEvent;
+      if (question?.text && !question.target)
+        out[cardKey(question.text)] = Math.max(
+          out[cardKey(question.text)] || 0,
+          event.at,
+        );
+    }
+  }
   for (const p of store.data.plans.filter(
     (p) => p.historyOwner && !p.deletedAt,
   ))

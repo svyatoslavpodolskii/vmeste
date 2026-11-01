@@ -61,6 +61,21 @@ export function validRecord(table, r, roomId) {
       r.id === `${roomId}:${r.localUserId}`
     );
   if (table === "plans") {
+    if (r.moodEntry != null) {
+      const e = r.moodEntry;
+      if (
+        !e ||
+        typeof e.day !== "string" ||
+        !/^\d{4}-\d{2}-\d{2}$/.test(e.day) ||
+        typeof e.note !== "string" ||
+        e.note.length > 1500 ||
+        [e.mood, e.energy, e.calm].some(
+          (n) => !Number.isInteger(n) || n < 1 || n > 5,
+        ) ||
+        r.id !== `${roomId}:mood:${r.authorId}:${e.day}`
+      )
+        return false;
+    }
     if (r.worldEvent != null) {
       const e = r.worldEvent;
       if (!e || typeof e !== "object" || !Number.isFinite(e.at) || e.at < 0)
@@ -74,7 +89,14 @@ export function validRecord(table, r, roomId) {
           return false;
         if (
           e.type === "plant" &&
-          !["luna", "fern", "sun", "coral", "blue", "mint"].includes(e.species)
+          !["luna", "fern", "sun", "coral", "blue", "mint", "unique"].includes(
+            e.species,
+          )
+        )
+          return false;
+        if (
+          e.text != null &&
+          (typeof e.text !== "string" || e.text.length > 700)
         )
           return false;
       } else if (e.world === "atlasworld") {

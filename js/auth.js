@@ -411,7 +411,12 @@ class Admission {
               ? targets[0].id
               : null;
         if (!targets.some((t) => t.id === selected))
-          return this.reject("Вход отклонён участником комнаты.", true);
+          return this.reject(
+            result === false
+              ? "Вход отклонён участником комнаты."
+              : "Запрос прерван. Можно подключиться снова.",
+            result === false,
+          );
         let target,
           member,
           proposedRoster = roster;
