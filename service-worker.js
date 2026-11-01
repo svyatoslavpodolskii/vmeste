@@ -1,10 +1,10 @@
 // Cache version follows package.json. Cache is scoped to this installation path.
-const CACHE = "vmeste-4.5.0-" + self.registration.scope;
+const CACHE = "vmeste-4.6.0-" + self.registration.scope;
 const ASSETS = [
   "./",
   "./index.html",
   "./manifest.json",
-  "./js/update.js?v=4.5.0",
+  "./js/update.js?v=4.6.0",
   "./css/beacon.css",
   "./css/circuit.css",
   "./css/immersive.css",
@@ -15,6 +15,7 @@ const ASSETS = [
   "./js/app.js",
   "./js/atlas.js",
   "./js/auth.js",
+  "./js/beacon-help.js",
   "./js/beacon-ui.js",
   "./js/beacon.js",
   "./js/boot.js",
@@ -32,6 +33,7 @@ const ASSETS = [
   "./js/party.js",
   "./js/peer.js",
   "./js/plans.js",
+  "./js/poetry.js",
   "./js/preferences.js",
   "./js/rooms.js",
   "./js/screens.js",

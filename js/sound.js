@@ -45,10 +45,23 @@ export class NatureSound {
     this.level = 0.65;
     this.activeNotes = new Set();
     this.starVoices = new Map();
+    this.playbackEpoch = 0;
   }
   async start() {
+    this.playbackEpoch++;
+    if (this.starting) return this.starting;
+    this.starting = this.initialize();
+    try {
+      await this.starting;
+    } finally {
+      this.starting = null;
+    }
+  }
+  async initialize() {
     if (this.context) {
-      await this.context.resume();
+      const ctx = this.context;
+      await ctx.resume();
+      if (this.context !== ctx) return;
       this.started = true;
       this.volume(this.level);
       return;
@@ -56,7 +69,10 @@ export class NatureSound {
     const Audio = window.AudioContext || window.webkitAudioContext;
     if (!Audio) throw Error("В этом браузере звук недоступен");
     const ctx = (this.context = new Audio({ latencyHint: "playback" }));
-    await ctx.resume();
+    // Build the large ambient graph off the output thread's active playback.
+    // Resume only after all buffers, filters and convolution are connected.
+    await ctx.suspend();
+    if (this.context !== ctx) return;
     const rng = random(this.seed),
       sr = ctx.sampleRate;
     const master = (this.master = ctx.createGain());
@@ -192,6 +208,8 @@ export class NatureSound {
         base: lowpass[i],
       });
     }
+    await ctx.resume();
+    if (this.context !== ctx) return;
     this.started = true;
     this.volume(this.level);
     this.evolution = setInterval(() => this.evolve(), 500);
@@ -472,7 +490,13 @@ export class NatureSound {
     if (previous && previous.gesture === star.gesture) {
       if (previous.until === star.until) return;
       previous.until = star.until;
-      previous.gain.gain.cancelAndHoldAtTime(now);
+      if (previous.gain.gain.cancelAndHoldAtTime)
+        previous.gain.gain.cancelAndHoldAtTime(now);
+      else {
+        const value = previous.gain.gain.value;
+        previous.gain.gain.cancelScheduledValues(now);
+        previous.gain.gain.setValueAtTime(value, now);
+      }
       previous.gain.gain.setTargetAtTime(0.025 + star.power * 0.03, now, 0.12);
       previous.gain.gain.setTargetAtTime(
         0.0001,
@@ -626,12 +650,20 @@ export class NatureSound {
       );
   }
   async stop() {
+    const epoch = ++this.playbackEpoch;
+    if (this.starting) await this.starting;
+    if (epoch !== this.playbackEpoch) return;
     this.started = false;
     if (this.context) {
       const ctx = this.context;
       this.master.gain.setTargetAtTime(0.0001, ctx.currentTime, 0.2);
       await new Promise((r) => setTimeout(r, 800));
-      if (!this.started && this.context === ctx && ctx.state !== "closed") {
+      if (
+        epoch === this.playbackEpoch &&
+        !this.started &&
+        this.context === ctx &&
+        ctx.state !== "closed"
+      ) {
         try {
           await ctx.suspend();
         } catch (error) {
@@ -641,6 +673,7 @@ export class NatureSound {
     }
   }
   destroy() {
+    this.playbackEpoch++;
     this.started = false;
     clearInterval(this.evolution);
     this.context?.close();

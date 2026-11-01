@@ -172,3 +172,25 @@ test("host processes its own moves without a hub round-trip and disconnected gue
     ["join", "ready"],
   );
 });
+
+test("monitor prefers a running table over newer invitations; manual pin and automatic return are stable", async () => {
+  const { selectGameScreen } = await import("../js/game-protocol.js");
+  const a = {
+    kind: "poem",
+    round: "a",
+    createdAt: 100,
+    startedAt: 120,
+    stage: "running",
+  };
+  const b = { kind: "beacon", round: "b", createdAt: 200, stage: "lobby" };
+  assert.equal(selectGameScreen(a, [a, b], b).round, "a");
+  const started = { ...b, stage: "running", startedAt: 300 };
+  assert.equal(selectGameScreen(a, [a, b], started).round, "b");
+  assert.equal(selectGameScreen(a, [a, started], started, true).round, "a");
+  const closed = { ...a, finished: true };
+  assert.equal(selectGameScreen(a, [closed, started], closed, true).round, "b");
+  assert.equal(
+    selectGameScreen(started, [a, { ...started, ownerOffline: true }]).round,
+    "a",
+  );
+});

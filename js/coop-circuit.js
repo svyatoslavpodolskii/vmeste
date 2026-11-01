@@ -121,13 +121,13 @@ export const circuitTrials = [
     "centroid",
     "orbit",
     "Общая орбита",
-    "Расположите свои огни так, чтобы их общий центр оказался в нужной точке. Координаты цели разделены между вами.",
+    "Расставьте свои огни на небе. Между ними появится общий огонёк: один человек знает нужную вертикаль, другой — горизонталь. Совместите обе подсказки.",
   ],
   [
     "tether",
     "orbit",
     "Натянутая нить",
-    "Совместите общий центр с целью и сохраните нужную длину нити между первыми двумя огнями.",
+    "Сведите общий огонёк на пересечение ваших подсказок. Нить между первыми двумя звёздами должна быть такой же длины, как светлый образец под картой.",
   ],
   [
     "clues",
@@ -545,7 +545,8 @@ export function circuitCommand(s, sender, input, now = Date.now()) {
         else {
           incorrect(
             s,
-            `Общий центр: ${(got[0] / n).toFixed(2)} / ${(got[1] / n).toFixed(2)}${variant ? ", квадрат длины нити: " + distance : ""}. Подвиньте огни вместе.`,
+            "Огонёк пока не на пересечении ваших подсказок. Можно передвинуть свои звёзды и попробовать снова." +
+              (variant ? " Сверьте длину нити с образцом." : ""),
           );
           q.submitted = [];
         }
@@ -830,9 +831,27 @@ export function circuitSecret(s, id) {
 
 const button = (title, action, value, extra = "") =>
   `<button class="btn soft" data-party="run-action" data-run-action="${action}" data-value="${value}" ${extra}>${title}</button>`;
-export function circuitScreen(f) {
+export function orbitScene(p, clue) {
+  const points = (p.points || []).map((value, i) =>
+    value == null
+      ? null
+      : { x: 40 + (value % 3) * 80, y: 40 + Math.floor(value / 3) * 80, i },
+  );
+  const chosen = points.filter(Boolean),
+    full = chosen.length === (p.players || []).length && chosen.length;
+  const center = full
+    ? {
+        x: sum(chosen.map((v) => v.x)) / chosen.length,
+        y: sum(chosen.map((v) => v.y)) / chosen.length,
+      }
+    : null;
+  const colors = ["#e5b5d5", "#b3e0cf", "#e8d58e", "#b7c4ee"];
+  const axis = clue ? 40 + clue.value * 80 : 0;
+  return `<div class="orbit-sky"><svg viewBox="0 0 240 240" role="img" aria-label="Ваши звёзды и их общий огонёк">${[40, 120, 200].map((v) => `<path d="M${v} 24V216M24 ${v}H216" stroke="#98b3bf" stroke-width=".6" opacity=".2"/>`).join("")}${clue ? `<path d="${clue.axis ? `M24 ${axis}H216` : `M${axis} 24V216`}" stroke="#f7dfa3" stroke-width="2" stroke-dasharray="5 5"/>` : ""}${center ? chosen.map((v) => `<path d="M${v.x} ${v.y}L${center.x} ${center.y}" stroke="${colors[v.i % 4]}" opacity=".4"/>`).join("") : ""}${points[0] && points[1] && p.distance != null ? `<path d="M${points[0].x} ${points[0].y}L${points[1].x} ${points[1].y}" stroke="#e4d39a" stroke-width="3"/>` : ""}${chosen.map((v) => `<g><circle cx="${v.x}" cy="${v.y}" r="12" fill="${colors[v.i % 4]}" opacity=".15"/><circle cx="${v.x}" cy="${v.y}" r="5" fill="${colors[v.i % 4]}"/><text x="${v.x}" y="${v.y + 25}" text-anchor="middle" fill="${colors[v.i % 4]}" font-size="10">${esc(p.players[v.i]?.name || "")}</text></g>`).join("")}${center ? `<circle cx="${center.x}" cy="${center.y}" r="10" fill="#ffe4a4" opacity=".15"/><circle cx="${center.x}" cy="${center.y}" r="4" fill="#ffe4a4" stroke="white" stroke-width="1"/>` : ""}</svg><p>${clue ? `Ваша подсказка — светлая ${clue.axis ? "горизонталь" : "вертикаль"}. Общий огонёк должен попасть на неё.` : "Большие звёзды — ваши выборы. Маленький золотой огонёк между ними — ваша общая точка встречи."}</p>${p.distance != null ? `<div class="orbit-rope-reference"><small>Образец длины нити</small><svg viewBox="0 0 240 30" aria-label="Нужная длина нити"><path d="M${120 - Math.sqrt(p.distance) * 40} 15H${120 + Math.sqrt(p.distance) * 40}" stroke="#e4d39a" stroke-width="3"/><circle cx="${120 - Math.sqrt(p.distance) * 40}" cy="15" r="4" fill="#e4d39a"/><circle cx="${120 + Math.sqrt(p.distance) * 40}" cy="15" r="4" fill="#e4d39a"/></svg></div>` : ""}</div>`;
+}
+export function circuitScreen(f, screen = false) {
   const p = f.public;
-  return `<section class="circuit-scene"><span class="eyebrow">СВЕТЛЯЧКИ · ОДНА КОМАНДА</span><div class="circuit-route">${(p.route || []).map((id, i) => `<i class="${i < p.turn ? "passed" : i === p.turn ? "current" : ""}" title="${esc(circuitTrials.find((t) => t.id === id)?.title)}"></i>`).join("")}</div><h2>${f.finished ? "Ночь стала светлее" : esc(p.trial?.title)}</h2><p>${f.finished ? `Вы вместе прошли ${p.runLength} испытаний` : esc(p.trial?.instruction)}</p><div class="team-light"><strong>${p.teamScore || 0}</strong><span>общего света${p.runLength ? ` · из ${p.runLength * 100}` : ""}</span></div>${p.phase === "result" ? `<div class="circuit-result"><strong>+${p.result.score}</strong><p>${esc(p.result.detail)}</p><small>Все достижения здесь общие.</small></div>` : ""}${p.phase === "play" && p.trial.family === "maze" ? mazeGrid(p) : p.phase === "play" && p.trial.family === "wiring" ? wireGrid(p) : p.phase === "memorize" ? `<div class="circuit-pattern">${p.pattern.map((n) => `<span>${symbols[n]}</span>`).join("")}</div>` : ""}${p.feedback ? `<p class="circuit-feedback" role="status">${esc(p.feedback)}</p>` : ""}</section>`;
+  return `<section class="circuit-scene"><span class="eyebrow">СВЕТЛЯЧКИ · ОДНА КОМАНДА</span><div class="circuit-route">${(p.route || []).map((id, i) => `<i class="${i < p.turn ? "passed" : i === p.turn ? "current" : ""}" title="${esc(circuitTrials.find((t) => t.id === id)?.title)}"></i>`).join("")}</div><h2>${f.finished ? "Ночь стала светлее" : esc(p.trial?.title)}</h2><p>${f.finished ? `Вы вместе прошли ${p.runLength} испытаний` : esc(p.trial?.instruction)}</p><div class="team-light"><strong>${p.teamScore || 0}</strong><span>общего света${p.runLength ? ` · из ${p.runLength * 100}` : ""}</span></div>${p.phase === "result" ? `<div class="circuit-result"><strong>+${p.result.score}</strong><p>${esc(p.result.detail)}</p><small>Все достижения здесь общие.</small></div>` : ""}${screen && p.phase === "play" && p.trial.family === "orbit" ? orbitScene(p) : ""}${p.phase === "play" && p.trial.family === "maze" ? mazeGrid(p) : p.phase === "play" && p.trial.family === "wiring" ? wireGrid(p) : p.phase === "memorize" ? `<div class="circuit-pattern">${p.pattern.map((n) => `<span>${symbols[n]}</span>`).join("")}</div>` : ""}${p.feedback ? `<p class="circuit-feedback" role="status">${esc(p.feedback)}</p>` : ""}</section>`;
 }
 function mazeGrid(p) {
   return `<div class="circuit-maze">${Array.from({ length: 36 }, (_, i) => `<i class="${p.walls.includes(i) ? "wall" : ""} ${p.position === i ? "traveller" : ""}">${p.position === i ? "✦" : p.exit === i ? "⌂" : p.keys.includes(i) && !p.collected.includes(i) ? "·" : ""}</i>`).join("")}</div>`;
@@ -917,7 +936,7 @@ export function circuitControls(f, user, secret = {}) {
       ? `<div class="private-instructions"><h3>Посылка ${symbols[secret.parcel] || "…"}</h3><p>${secret.mirror ? "Зеркальный режим: первый и третий порталы меняются местами" : "Прямой режим"}</p></div><div class="circuit-buttons">${[0, 1, 2].map((i) => button("Портал " + (i + 1), "run-tap", i)).join("")}</div>`
       : `<div class="private-instructions"><h3>Таблица станции</h3><p>${(secret.rules || []).map((v, i) => symbols[i] + " и " + symbols[i + 3] + " → портал " + (v + 1)).join("<br>")}</p><p>В зеркальном режиме 1 ↔ 3.</p></div>`;
   if (family === "orbit")
-    html += `<div class="private-instructions"><p>Ваша часть цели: ${secret.target?.axis ? "вертикаль" : "горизонталь"} общего центра = ${secret.target?.value?.toFixed(2)}${p.distance != null ? ` · квадрат длины нити = ${p.distance}` : ""}</p></div><div class="orbit-choice">${Array.from({ length: 9 }, (_, i) => button(`${i % 3} / ${Math.floor(i / 3)}`, "run-choice", i, `${mine ? "disabled" : ""} aria-pressed="${secret.choice === i}"`)).join("")}</div>`;
+    html += `${orbitScene(p, secret.target)}<p class="fine">Выберите, где поставить свою звезду. Сначала расставьте все огни и обсудите общую точку, потом подтвердите.</p><div class="orbit-choice">${Array.from({ length: 9 }, (_, i) => button("✦", "run-choice", i, `${mine ? "disabled" : ""} aria-label="${["Верхний", "Средний", "Нижний"][Math.floor(i / 3)]} ряд, ${["слева", "по центру", "справа"][i % 3]}" aria-pressed="${secret.choice === i}"`)).join("")}</div>`;
   if (family === "logic")
     html += `<div class="private-instructions"><h3>Ряд ${(p.progress || 0) + 1} / 3</h3><p>${secret.negative ? "Запрещены: " + symbols.filter((_, i) => !secret.clue?.includes(i)).join(" ") : "Подходят: " + (secret.clue || []).map((i) => symbols[i]).join(" ")}</p></div><div class="circuit-buttons">${symbols.map((s, i) => button(s, "run-tap", i, actor ? "" : "disabled")).join("")}</div>`;
   if (family === "recipe")

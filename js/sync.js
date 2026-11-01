@@ -216,6 +216,12 @@ export function validRecord(table, r, roomId) {
     )
       return false;
     if (
+      r.arcadeRecord?.poem != null &&
+      (typeof r.arcadeRecord.poem !== "string" ||
+        r.arcadeRecord.poem.length > 4000)
+    )
+      return false;
+    if (
       r.arcadeRecord != null &&
       (!r.arcadeRecord ||
         typeof r.arcadeRecord.kind !== "string" ||

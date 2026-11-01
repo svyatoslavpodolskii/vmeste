@@ -331,3 +331,43 @@
 .projector .circuit-wires {
   width: min(45vw, 450px);
 }
+.orbit-sky {
+  padding: 18px;
+  margin: 14px 0;
+  border-radius: 24px;
+  background: radial-gradient(ellipse at top, #374d68, #243849);
+  color: #f5e6c6;
+}
+.orbit-sky > svg {
+  display: block;
+  width: min(340px, 100%);
+  margin: auto;
+}
+.orbit-sky p {
+  color: #c2d1d7 !important;
+  font-size: 12px;
+  line-height: 1.6;
+  text-align: center;
+}
+.orbit-rope-reference {
+  max-width: 340px;
+  margin: 16px auto 0;
+  text-align: center;
+}
+.orbit-rope-reference small {
+  color: #e8d6a9;
+}
+.orbit-rope-reference svg {
+  display: block;
+  width: 100%;
+}
+.orbit-choice button {
+  min-height: 58px;
+  font-size: 26px;
+}
+.orbit-choice button[aria-pressed="true"] {
+  color: #af7940;
+  background: #fae8ba;
+  border-color: #d4b36f;
+  box-shadow: 0 0 20px #d7ba7022;
+}

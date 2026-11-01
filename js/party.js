@@ -1,5 +1,7 @@
 import { updateSoundConnections } from "./sound-controls.js";
 import { updateGamePresence } from "./game-protocol.js";
+import { bindBeaconAssistant } from "./beacon-help.js";
+import { poetryControls } from "./poetry.js";
 import { assignedConstellations } from "./composition.js";
 import { worldKinds, worldScreen } from "./worlds.js";
 import { TURN_WORLD, turnScreen } from "./turn-games.js";
@@ -246,7 +248,7 @@ export function partyScreen(f, screen = false) {
   if (f.stage === "lobby")
     return `<section class="table-lobby"><span class="eyebrow">СОБИРАЕМСЯ ЗА ОДНИМ СТОЛОМ</span><h2>${esc(f.title)}</h2><p>Игра начнётся, когда присоединятся минимум ${p.minPlayers || 2} участника и все нажмут «Готов».</p><div class="lobby-players">${players.map((u) => `<div class="${p.readyPlayers?.includes(u.id) ? "is-ready" : ""}"><span>${esc(u.avatar)}</span><strong>${esc(u.name)}</strong><small>${p.away?.includes(u.id) ? "Отошёл" : p.readyPlayers?.includes(u.id) ? "Готов" : p.joined?.includes(u.id) ? "В комнате" : "Приглашён"}</small></div>`).join("")}</div>${p.needsUpdate?.length ? `<div class="lobby-update"><span>${icon("settings")}</span><div><strong>Нужно обновить приложение</strong><p>На устройствах: ${p.needsUpdate.map(esc).join(", ")}. Откройте «Настройки» → «Обновление», затем вернитесь к столу. Ответы и история сохранятся.</p></div></div>` : ""}<p class="fine">${p.requiresScreen ? `${p.screenCount ? "Общий экран подключён" : "Подключите ПК как общий экран — это часть игры"}` : "Один общий стол · одинаковые лобби объединяются автоматически"}</p></section>`;
   if (f.kind === "race" && p.rulesVersion === CIRCUIT_VERSION)
-    return circuitScreen(f);
+    return circuitScreen(f, screen);
   if (f.kind === "beacon" && p.rulesVersion === BEACON_RULES)
     return beaconScreen(f, screen);
   else if ([...expeditionKinds, "race", "beacon"].includes(f.kind))
@@ -279,7 +281,7 @@ export function partyScreen(f, screen = false) {
   else if (f.kind === "poem")
     body = p.revealed
       ? `<div class="poem-sheet">${esc(p.poem || "").replaceAll("\n", "<br>")}</div>`
-      : `<div class="poem-wait"><span>✍️</span><p>${p.ready || 0} / ${p.total || 0} слов в нашей истории</p></div>`;
+      : `<div class="poem-sealed">${players.map((player) => `<div class="poem-envelope ${p.readyPlayers?.includes(player.id) ? "ready" : ""}"><span>${p.readyPlayers?.includes(player.id) ? icon("check") : icon("letter")}</span><strong>${esc(player.name)}</strong><small>${p.readyPlayers?.includes(player.id) ? "Слова готовы" : "Выбирает слова"}</small></div>`).join("")}</div>`;
   else if (["meditation", "soundgarden"].includes(f.kind)) body = soundWorld(f);
   else body = "";
   return `<section class="party-public party-${esc(f.kind)}"><h2>${esc(f.title)}</h2>${deckKinds.includes(f.kind) ? "" : `<p class="party-prompt">${esc(f.text)}</p>`}${body}<div class="party-progress">${esc(f.progress || "")}${f.kind === "draw" ? timer(f) : ""}</div></section>`;
@@ -339,7 +341,14 @@ export class PartyGames {
       const p = e.detail;
       if (p) {
         this.secrets.set(p.round + ":" + (p.turn || 0), p);
-        if (this.opened && p.round === this.frame?.round) this.render(true);
+        if (this.opened && p.round === this.frame?.round)
+          this.render(
+            !(
+              this.frame.kind === "beacon" &&
+              p.role === "guide" &&
+              document.querySelector("[data-beacon-assistant]")
+            ),
+          );
       }
     });
     document.addEventListener("click", (e) => {
@@ -729,6 +738,7 @@ export class PartyGames {
     const frame = this.buildPublicFrame();
     return {
       ...frame,
+      startedAt: this.state.started || 0,
       public: {
         ...frame.public,
         paused: !!this.state.pausedAt,
@@ -1199,7 +1209,10 @@ export class PartyGames {
       this.audio.destroy();
       this.audio = null;
       this.audioFrame = null;
-    } else if (frame.public.audioPaused && this.audio.started)
+    } else if (
+      frame.public.audioPaused &&
+      (this.audio.started || this.audio.starting)
+    )
       this.audio.stop();
     else if (!frame.public.audioPaused && !this.audio.started)
       this.audio
@@ -1480,7 +1493,7 @@ export class PartyGames {
         }
         this.broadcast();
         this.privateInstructions();
-        this.render(true);
+        this.render(this.userId === s.engineer);
       }
       return;
     }
@@ -1980,6 +1993,12 @@ export class PartyGames {
       ":" +
       !!f.public.paused +
       ":" +
+      (f.public.moduleReady || []).join(",") +
+      ":" +
+      (f.public.approved || []).join(",") +
+      ":" +
+      (f.public.trialReady || []).join(",") +
+      ":" +
       (f.invitedAt || 0) +
       ":" +
       (f.public.index ?? 0) +
@@ -2102,7 +2121,7 @@ export class PartyGames {
       html =
         '<button class="btn soft wide" data-action="close">Закрыть окно</button>';
     else if (f.stage === "lobby") {
-      html = `<button class="btn primary wide" data-party="ready">${p.readyPlayers?.includes(this.userId) ? "Отменить готовность" : "Готов"}</button><p class="muted center">${p.joined?.length || 1} за столом · начало после готовности всех</p>${this.hosting && ["soundgarden", "meditation"].includes(f.kind) ? '<button class="btn lavender wide" data-party="solo">Слушать одному · все пульты</button>' : this.hosting && deckKinds.includes(f.kind) ? '<button class="btn lavender wide" data-party="solo">Играть с одного телефона · ответы вслух</button>' : ""}${this.hosting ? `<button class="btn soft wide" data-party="invite" ${f.invitedAt ? "disabled" : ""}>${f.invitedAt ? "Приглашение активно" : "Отправить приглашение"}</button><p class="fine center">Приглашение останется в играх до закрытия лобби и не прервёт другую игру.</p><button class="btn text wide" data-party="cancel-lobby">Закрыть лобби</button>` : ""}`;
+      html = `<button class="btn primary wide" data-party="ready">${p.readyPlayers?.includes(this.userId) ? "Отменить готовность" : "Готов"}</button><p class="muted center">${p.joined?.length || 1} за столом · начало после готовности всех</p>${this.hosting && ["soundgarden", "meditation"].includes(f.kind) ? '<button class="btn lavender wide" data-party="solo">Слушать одному · все пульты</button>' : this.hosting && [...deckKinds, "poem"].includes(f.kind) ? '<button class="btn lavender wide" data-party="solo">Играть с одного телефона · ответы вслух</button>' : ""}${this.hosting ? `<button class="btn soft wide" data-party="invite" ${f.invitedAt ? "disabled" : ""}>${f.invitedAt ? "Приглашение активно" : "Отправить приглашение"}</button><p class="fine center">Приглашение останется в играх до закрытия лобби и не прервёт другую игру.</p><button class="btn text wide" data-party="cancel-lobby">Закрыть лобби</button>` : ""}`;
     } else if (f.kind === "race" && p.rulesVersion === CIRCUIT_VERSION)
       html = circuitControls(f, this.userId, secret);
     else if (f.kind === "beacon" && p.rulesVersion === BEACON_RULES)
@@ -2150,19 +2169,12 @@ export class PartyGames {
         : `<form id="party-answer-form"><label>Ваш ответ<textarea name="answer" maxlength="160" required placeholder="Одна мысль или короткая фраза…"></textarea></label><button class="btn primary wide" type="submit">Готово</button><p class="answer-note"></p></form>`;
     else if (f.kind === "poem")
       html = p.revealed
-        ? '<p class="game-instruction">Прочитайте вслух с выражением. Каждый — по строчке.</p>'
-        : `<form id="party-answer-form">${Array.from(
-            { length: p.total },
-            (_, i) => i,
-          )
-            .filter((i) => p.players[i % p.players.length].id === this.userId)
-            .map(
-              (i) =>
-                `<label>${["Предмет или существо", "Прилагательное", "Глагол: что делать?", "Место"][i % 4]}<input name="${i}" maxlength="50" required placeholder="Пусть будет неожиданно…"></label>`,
-            )
-            .join(
-              "",
-            )}<button class="btn primary wide" type="submit">Готово</button><p class="answer-note"></p></form>`;
+        ? `<p class="game-instruction">Прочитайте стих вслух по строчке. Чью интонацию он напоминает?</p><button class="btn lavender wide" data-party="save-poem">${icon("gallery")} Сохранить наш стих</button>`
+        : poetryControls(
+            f,
+            this.userId,
+            this.drafts.get(f.round + ":" + (p.turn || 0)) || {},
+          );
     else if (f.kind === "race")
       html = `<p class="game-instruction">Чередуйте кнопки. Не скорость телефона, а ваш ритм.</p><div class="race-controls"><button data-party="step" data-side="0">Левый<br>☄️</button><button data-party="step" data-side="1">Правый<br>✨</button></div>`;
     else if (f.kind === "beacon")
@@ -2227,8 +2239,12 @@ export class PartyGames {
       for (const el of box.querySelectorAll(
         "#party-answer-form input,#party-answer-form textarea",
       ))
-        if (draft[el.name] != null) el.value = draft[el.name];
+        if (draft[el.name] != null) {
+          if (el.type === "radio") el.checked = el.value === draft[el.name];
+          else el.value = draft[el.name];
+        }
     this.bindDrawing();
+    if (f.kind === "beacon") bindBeaconAssistant(f, secret);
     bindSoundControls(this);
   }
   roundCopy() {
@@ -2384,21 +2400,23 @@ export class PartyGames {
         records
           .map(
             (r) =>
-              `<article class="record-history-card"><div><span class="eyebrow">${new Date(r.createdAt).toLocaleDateString("ru-RU")} · ${r.arcadeRecord.players.length} участников</span><h3>${esc(r.title)}</h3><p>${r.arcadeRecord.rulesVersion === BEACON_RULES && r.arcadeRecord.kind === "beacon" ? `${r.arcadeRecord.harbor.ships.length} судов дома · ${r.arcadeRecord.beaconLength} узлов` : r.arcadeRecord.rulesVersion === CIRCUIT_VERSION && r.arcadeRecord.kind === "race" ? `${Math.round(r.arcadeRecord.teamScore / r.arcadeRecord.runLength)}% общего света · ${r.arcadeRecord.runLength} испытаний` : ["museum", "frequency", ...expeditionKinds, "race", "beacon"].includes(r.arcadeRecord.kind) ? `${r.arcadeRecord.results?.[this.userId] || 0} ${r.arcadeRecord.kind === "frequency" ? "/100" : "очков"}` : `${(r.arcadeRecord.times?.[this.userId] / 1000 || r.arcadeRecord.seconds).toFixed(1)} с`}</p></div>${
-                r.arcadeRecord.gallery
-                  ? `<div class="record-thumbs">${r.arcadeRecord.gallery
-                      .slice(0, 3)
-                      .map((g) => `<div>${sketch(g.lines)}</div>`)
-                      .join(
-                        "",
-                      )}</div><button class="btn text" data-party="view-record" data-id="${esc(r.id)}">Открыть выставку</button><button class="btn soft wide" data-party="screen-record" data-id="${esc(r.id)}">Показать на общем экране</button>`
-                  : r.arcadeRecord.kind === "beacon" &&
-                      r.arcadeRecord.rulesVersion === BEACON_RULES
-                    ? `<button class="btn soft wide" data-party="beacon-record" data-id="${esc(r.id)}">Открыть гавань ${icon("arrow")}</button>`
-                    : r.arcadeRecord.kind === "race" &&
-                        r.arcadeRecord.rulesVersion === CIRCUIT_VERSION
-                      ? `<button class="btn soft wide" data-party="view-team-record" data-id="${esc(r.id)}">Посмотреть путь ${icon("arrow")}</button>`
-                      : ""
+              `<article class="record-history-card"><div><span class="eyebrow">${new Date(r.createdAt).toLocaleDateString("ru-RU")} · ${r.arcadeRecord.players.length} участников</span><h3>${esc(r.title)}</h3><p>${r.arcadeRecord.kind === "poem" ? "Ваши слова сложились вместе" : r.arcadeRecord.rulesVersion === BEACON_RULES && r.arcadeRecord.kind === "beacon" ? `${r.arcadeRecord.harbor.ships.length} судов дома · ${r.arcadeRecord.beaconLength} узлов` : r.arcadeRecord.rulesVersion === CIRCUIT_VERSION && r.arcadeRecord.kind === "race" ? `${Math.round(r.arcadeRecord.teamScore / r.arcadeRecord.runLength)}% общего света · ${r.arcadeRecord.runLength} испытаний` : ["museum", "frequency", ...expeditionKinds, "race", "beacon"].includes(r.arcadeRecord.kind) ? `${r.arcadeRecord.results?.[this.userId] || 0} ${r.arcadeRecord.kind === "frequency" ? "/100" : "очков"}` : `${(r.arcadeRecord.times?.[this.userId] / 1000 || r.arcadeRecord.seconds).toFixed(1)} с`}</p></div>${
+                r.arcadeRecord.kind === "poem"
+                  ? `<button class="btn soft wide" data-party="poem-record" data-id="${esc(r.id)}">Прочитать наш стих ${icon("story")}</button>`
+                  : r.arcadeRecord.gallery
+                    ? `<div class="record-thumbs">${r.arcadeRecord.gallery
+                        .slice(0, 3)
+                        .map((g) => `<div>${sketch(g.lines)}</div>`)
+                        .join(
+                          "",
+                        )}</div><button class="btn text" data-party="view-record" data-id="${esc(r.id)}">Открыть выставку</button><button class="btn soft wide" data-party="screen-record" data-id="${esc(r.id)}">Показать на общем экране</button>`
+                    : r.arcadeRecord.kind === "beacon" &&
+                        r.arcadeRecord.rulesVersion === BEACON_RULES
+                      ? `<button class="btn soft wide" data-party="beacon-record" data-id="${esc(r.id)}">Открыть гавань ${icon("arrow")}</button>`
+                      : r.arcadeRecord.kind === "race" &&
+                          r.arcadeRecord.rulesVersion === CIRCUIT_VERSION
+                        ? `<button class="btn soft wide" data-party="view-team-record" data-id="${esc(r.id)}">Посмотреть путь ${icon("arrow")}</button>`
+                        : ""
               }<button class="btn text" data-party="delete-record" data-id="${esc(r.id)}">${icon("trash")} Удалить результат</button></article>`,
           )
           .join("") ||
@@ -2444,6 +2462,42 @@ export class PartyGames {
   }
   async action(action, el) {
     try {
+      if (
+        action === "save-poem" &&
+        this.frame?.kind === "poem" &&
+        this.frame.public.revealed
+      ) {
+        const f = this.frame,
+          id = `${this.store.roomId}:poem:${f.round}:${f.public.turn || 0}`;
+        if (!this.store.data.plans.some((p) => p.id === id && !p.deletedAt))
+          await this.store.save("plans", {
+            id,
+            title: "Наш стих",
+            items: [],
+            arcadeRecord: {
+              kind: "poem",
+              seconds: Math.max(0, (f.elapsed || 0) / 1000),
+              players: f.public.players.map((p) => p.id),
+              poem: f.public.poem,
+              createdAt: Date.now(),
+            },
+          });
+        toast("Стих сохранён в «Выставках и итогах»");
+        return;
+      }
+      if (action === "poem-record") {
+        const record = this.store.data.plans.find(
+          (p) =>
+            p.id === el.dataset.id &&
+            !p.deletedAt &&
+            p.arcadeRecord?.kind === "poem",
+        );
+        if (record)
+          sheet(
+            `<span class="eyebrow">ВАША ОБЩАЯ ПОЭЗИЯ · ${new Date(record.createdAt).toLocaleDateString("ru-RU")}</span><h2>Наш стих</h2><div class="poem-sheet">${esc(record.arcadeRecord.poem).replaceAll("\n", "<br>")}</div>`,
+          );
+        return;
+      }
       if (action === "circuit-home") {
         this.circuitMenu();
         return;

@@ -1,4 +1,5 @@
 import { esc, icon } from "./ui.js";
+import { beaconAssistant } from "./beacon-help.js";
 import {
   BEACON_RULES,
   beaconModules,
@@ -13,6 +14,38 @@ const lens = (n) =>
   `<span class="beacon-lens" style="--lens:${paint[n]}"><b>${marks[n]}</b><small>${colors[n]}</small></span>`;
 const pulse = (n) => (n ? "—" : "·");
 const cellName = (n) => "АБВГД"[n % 5] + (Math.floor(n / 5) + 1);
+export function beaconMechanism(p) {
+  const m = p.display;
+  if (!m || p.phase !== "repair") return "";
+  let body;
+  if (p.module.id === "prism")
+    body = `<div class="monitor-prism">${m.order.map((color, i) => `<div><small>ЛИНЗА ${i + 1}</small>${lens(color)}</div>`).join('<span class="prism-link">→</span>')}</div><p class="monitor-bearing">${icon("sun")} Луч направлен: <strong>${course[m.angle]}</strong></p>`;
+  else if (p.module.id === "power")
+    body = `<div class="monitor-banks">${m.levels
+      .map(
+        (level, i) =>
+          `<div><div class="bank-tower">${Array.from(
+            { length: 4 },
+            (_, n) => `<i class="${n < level ? "charged" : ""}"></i>`,
+          )
+            .reverse()
+            .join(
+              "",
+            )}</div><small>${["Основной", "Тихий", "Резервный"][i]}</small><strong>${level}</strong></div>`,
+      )
+      .join(
+        "",
+      )}</div><p class="monitor-bearing">Свет <strong>${m.light}</strong> · нагрев <strong>${m.heat}</strong></p>`;
+  else if (p.module.id === "coolant")
+    body = `<svg class="monitor-coolant" viewBox="0 0 300 300" aria-label="Текущий путь воды">${m.materials.map((material, i) => `<g><rect x="${(i % 5) * 60 + 3}" y="${Math.floor(i / 5) * 60 + 3}" width="54" height="54" rx="10" fill="${["#b1c5b3", "#c2b2d7", "#d9bc87", "#8bafc3"][material]}" opacity=".7"/><text x="${(i % 5) * 60 + 10}" y="${Math.floor(i / 5) * 60 + 16}" font-size="9" fill="#233e47">${cellName(i)}</text><text x="${(i % 5) * 60 + 30}" y="${Math.floor(i / 5) * 60 + 39}" text-anchor="middle" font-size="22">${i === 0 ? "↓" : i === m.exit ? "⌂" : i === m.cooler ? "❄" : ["△", "◇", "□", "○"][material]}</text></g>`).join("")}<polyline points="${m.path.map((i) => `${(i % 5) * 60 + 30},${Math.floor(i / 5) * 60 + 30}`).join(" ")}" stroke="#b5f4e0" stroke-width="8" stroke-linejoin="round" stroke-linecap="round" fill="none" opacity=".8"/></svg><p>Вода должна пройти через снежинку к выходу. Книга условий — у навигатора.</p>`;
+  else if (p.module.id === "signal")
+    body = `<div class="monitor-signs">${m.observed.map((n) => `<span>${marks[n]}</span>`).join("")}</div><div class="monitor-pulses">${m.signal.map((v, i) => `<span style="--pulse:${i}"><small>${i + 1}</small><b>${pulse(v)}</b></span>`).join("")}</div><p>Навигатор переводит знаки. Инженер собирает сообщение.</p>`;
+  else if (p.module.id === "pendulum")
+    body = `<svg class="monitor-clock" viewBox="0 0 300 300" aria-label="Живая фаза маятника"><circle cx="150" cy="150" r="110" fill="none" stroke="#8baeb0" stroke-width="2"/><circle cx="150" cy="150" r="88" fill="none" stroke="#8baeb0" stroke-width="1" stroke-dasharray="2 12"/>${course.map((label, i) => `<text x="${150 + Math.sin((i * Math.PI) / 2) * 133}" y="${155 - Math.cos((i * Math.PI) / 2) * 133}" text-anchor="middle" fill="#eee6d0" font-size="13">${label[0]}</text>`).join("")}<g class="monitor-clock-hand" style="animation-duration:${m.period}ms;animation-delay:${m.clockStart - Date.now()}ms;animation-direction:${m.direction ? "reverse" : "normal"}"><path d="M150 150V45" stroke="#f8d999" stroke-width="5" stroke-linecap="round"/><circle cx="150" cy="45" r="8" fill="#f8d999"/></g><circle cx="150" cy="150" r="8" fill="#f8d999"/></svg><p>Передачи <strong>${m.gears.join(" : ")}</strong> · ${m.direction ? "против часовой" : "по часовой"}</p>`;
+  else
+    body = `<div class="monitor-routes">${m.routes.map((r, i) => `<article class="${m.route === i ? "selected" : ""}"><span>${icon("map")}</span><h3>${esc(r.name)}</h3><p>${esc(r.water)} · ${r.lit ? "с огнями" : "без огней"}<br>${esc(r.cargo)} · расход ${r.cost}</p><small>Ориентир: ${course[r.bearing]}</small></article>`).join("")}</div><p>Входной курс: <strong>${course[m.bearing]}</strong></p>`;
+  return `<section class="beacon-monitor-mechanism"><span class="eyebrow">МЕХАНИЗМ ОТЗЫВАЕТСЯ НА ВАШИ ТЕЛЕФОНЫ</span>${body}</section>`;
+}
 const button = (text, action, index, value, extra = "") =>
   `<button class="btn soft" data-party="beacon-action" data-beacon-action="${action}" data-index="${index}" data-value="${value}" ${extra}>${text}</button>`;
 const progress = (p) => `${Math.min(p.turn + 1, p.total)} / ${p.total}`;
@@ -26,7 +59,7 @@ function harborStats(h) {
 }
 export function beaconScreen(f, screen = false) {
   const p = f.public;
-  return `<section class="beacon-shared ${screen ? "on-monitor" : p.phase === "repair" ? "beacon-compact" : ""}"><span class="eyebrow">ЗАЖЕЧЬ МАЯК · ОБЩАЯ ВАХТА</span>${harborScene(p.harbor)}${harborStats(p.harbor)}<div class="beacon-stage-title"><small>${f.finished ? "ВАХТА ЗАВЕРШЕНА" : p.phase === "voyage" ? "КАК ВЕДЁМ ДОМОЙ" : `УЗЕЛ ${progress(p)}`}</small><h2>${f.finished ? "Гавань живёт" : p.phase === "voyage" ? "Выберите общий путь" : esc(p.module.title)}</h2><p>${f.finished ? `Вы восстановили ${p.total} узлов и провели домой ${p.harbor.ships.length} судна.` : p.phase === "voyage" ? "Решение изменит запас энергии, тепло и течение следующей части вахты." : esc(p.module.task)}</p></div>${p.phase === "result" ? `<div class="beacon-result"><strong>+${p.result.score} общего света</strong><p>${esc(p.result.detail)}</p></div>` : ""}${p.feedback ? `<p class="beacon-feedback" role="status">${esc(p.feedback)}</p>` : ""}${!f.finished && p.phase !== "voyage" ? `<div class="beacon-crew">${p.players.map((u) => `<span>${esc(u.name)} <b>${p.moduleReady?.includes(u.id) ? "Готов ✓" : p.approved?.includes(u.id) ? "Инструкция сверена ✓" : u.id === p.engineer ? "у механизма" : "с книгой маяка"}</b></span>`).join("")}</div>` : ""}</section>`;
+  return `<section class="beacon-shared ${screen ? "on-monitor" : p.phase === "repair" ? "beacon-compact" : ""}"><span class="eyebrow">ЗАЖЕЧЬ МАЯК · ОБЩАЯ ВАХТА</span>${harborScene(p.harbor)}${harborStats(p.harbor)}<div class="beacon-stage-title"><small>${f.finished ? "ВАХТА ЗАВЕРШЕНА" : p.phase === "voyage" ? "КАК ВЕДЁМ ДОМОЙ" : `УЗЕЛ ${progress(p)}`}</small><h2>${f.finished ? "Гавань живёт" : p.phase === "voyage" ? "Выберите общий путь" : esc(p.module.title)}</h2><p>${f.finished ? `Вы восстановили ${p.total} узлов и провели домой ${p.harbor.ships.length} судна.` : p.phase === "voyage" ? "Решение изменит запас энергии, тепло и течение следующей части вахты." : esc(p.module.task)}</p></div>${screen ? beaconMechanism(p) : ""}${p.phase === "result" ? `<div class="beacon-result"><strong>+${p.result.score} общего света</strong><p>${esc(p.result.detail)}</p></div>` : ""}${p.feedback ? `<p class="beacon-feedback" role="status">${esc(p.feedback)}</p>` : ""}${!f.finished && p.phase !== "voyage" ? `<div class="beacon-crew">${p.players.map((u) => `<span>${esc(u.name)} <b>${p.moduleReady?.includes(u.id) ? "Готов ✓" : p.approved?.includes(u.id) ? "Инструкция сверена ✓" : u.id === p.engineer ? "у механизма" : "с книгой маяка"}</b></span>`).join("")}</div>` : ""}</section>`;
 }
 function observations(o, module) {
   const fields = {
@@ -127,7 +160,7 @@ export function beaconControls(f, user, secret = {}) {
   if (!secret.role)
     return '<p class="center">Получаем вашу половину задачи…</p>';
   if (!engineer)
-    return `<section class="beacon-guide"><span class="eyebrow">КНИГА МАЯКА · УСЛОВИЯ ЭТОЙ НАСТРОЙКИ</span>${manualBody(p.module.id, secret.manual)}<p class="manual-reminder">Не угадывайте показания. Спросите инженера и сверьте все условия.</p></section><button class="btn ${p.approved.includes(user) ? "soft" : "primary"} wide" data-party="beacon-action" data-beacon-action="beacon-guide-ready">${p.approved.includes(user) ? "Инструкция сверена · отменить" : "Инструкция сверена"}</button><p class="fine center">После изменения пульта подтверждение нужно дать снова.</p>`;
+    return `<section class="beacon-guide"><span class="eyebrow">КНИГА МАЯКА · УСЛОВИЯ ЭТОЙ НАСТРОЙКИ</span>${beaconAssistant(f)}<details class="original-manual"><summary>Полная инструкция · как устроены правила</summary>${manualBody(p.module.id, secret.manual)}</details><p class="manual-reminder">Не угадывайте показания. Спросите инженера и сверьте все условия.</p></section><button class="btn ${p.approved.includes(user) ? "soft" : "primary"} wide" data-party="beacon-action" data-beacon-action="beacon-guide-ready">${p.approved.includes(user) ? "Инструкция сверена · отменить" : "Инструкция сверена"}</button><p class="fine center">После изменения пульта подтверждение нужно дать снова.</p>`;
   return `<section class="beacon-machine">${observations(secret.observations, p.module.id)}<div class="machine-panel">${machineBody(p.module.id, secret.machine)}</div><div class="machine-launch"><p>${p.approved.length} / ${p.guides.length} навигаторов сверили настройку</p><button class="btn primary wide" data-party="beacon-action" data-beacon-action="beacon-launch" ${p.approved.length < p.guides.length ? "disabled" : ""}>${p.module.id === "pendulum" ? "Поймать фазу и запустить" : "Запустить узел"}</button></div></section>`;
 }
 export function beaconHome(store, active) {

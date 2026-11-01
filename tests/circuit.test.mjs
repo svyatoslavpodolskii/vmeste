@@ -68,3 +68,32 @@ test("private guides stay private, stale turns and actions from the wrong role a
     false,
   );
 });
+
+test("orbit clues and rope length are drawn visually without coordinate instructions", async () => {
+  const { circuitControls, circuitScreen } = await import(
+    "../js/coop-circuit.js"
+  );
+  const s = {
+    round: "visual-orbit",
+    players: players.slice(0, 2),
+    started: 1000,
+  };
+  initCircuit(s, 24);
+  s.route = ["tether"];
+  s.turn = 0;
+  prepareTrial(s);
+  s.phase = "play";
+  const pub = { ...circuitPublic(s), players: s.players };
+  const f = { public: pub, kind: "race" };
+  const html = circuitControls(
+    f,
+    players[0].id,
+    circuitSecret(s, players[0].id),
+  );
+  assert.ok(html.includes("orbit-sky"));
+  assert.ok(html.includes("светлая вертикаль"));
+  assert.ok(!html.includes("квадрат длины"));
+  assert.ok(!html.includes("общего центра ="));
+  assert.ok(circuitScreen(f, true).includes("Образец длины нити"));
+  assert.ok(!circuitScreen(f).includes("orbit-sky"));
+});

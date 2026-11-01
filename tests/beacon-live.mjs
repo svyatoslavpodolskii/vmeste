@@ -1,5 +1,6 @@
 ﻿import { chromium } from "playwright";
 import assert from "node:assert/strict";
+import { guideFields } from "../js/beacon-help.js";
 import { solveBeaconModule } from "./helpers/beacon-solver.mjs";
 const browser = await chromium.launch();
 const errors = [];
@@ -131,6 +132,15 @@ try {
         inspected = true;
         const engineer = pages[before.engineer],
           guide = pages[before.guides[0]];
+        for (const key of guideFields[before.module.id]) {
+          const input = guide.locator(`[data-guide-field="${key}"]`);
+          const value = String(Number(before.machine[key] || 0));
+          if (key === "serial") await input.fill(value);
+          else await input.selectOption(value);
+        }
+        await guide.locator(".guide-resolution h3").waitFor();
+        await m.locator(".beacon-monitor-mechanism").waitFor();
+
         await engineer.locator(".beacon-machine").waitFor();
         await guide.locator(".beacon-guide").waitFor();
         assert.equal(await engineer.locator(".beacon-guide").count(), 0);
@@ -173,8 +183,13 @@ try {
         await page.waitForTimeout(Math.max(0, target - Date.now()));
       }
       let selector = `[data-beacon-action="${command.action}"]`;
-      if (command.index != null && command.action === "beacon-set") selector += `[data-index="${command.index}"]`;
-      if (command.value != null && command.value !== 0 && command.action !== "beacon-launch")
+      if (command.index != null && command.action === "beacon-set")
+        selector += `[data-index="${command.index}"]`;
+      if (
+        command.value != null &&
+        command.value !== 0 &&
+        command.action !== "beacon-launch"
+      )
         selector += `[data-value="${command.value}"]`;
       await page.locator(selector).click();
       await changed(before.revision);
@@ -182,7 +197,6 @@ try {
     const result = await getState();
     assert.equal(result.phase, "result");
     if (turn === 0) {
-      await close(a);
       await a.reload();
       await a.locator(".bottom-nav").waitFor();
       await open(a);

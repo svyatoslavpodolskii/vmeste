@@ -25,6 +25,7 @@ import { RoomAuth } from "./auth.js";
 import { Database } from "./db.js";
 import { Store } from "./store.js";
 import { RoomPeer } from "./peer.js";
+import { selectGameScreen } from "./game-protocol.js";
 import { NatureSound } from "./sound.js";
 import { MoodJournal } from "./mood.js";
 import {
@@ -235,7 +236,9 @@ function updateUnread() {
 }
 window.addEventListener("vmeste-unread", updateUnread);
 function screenTabs() {
-  return `<div class="screen-tabs">${[...(peer?.games?.values() || [])]
+  return `<div class="screen-tabs">${btn("Авто", "screen-auto", state.screenPinned ? "soft" : "lavender")}${[
+    ...(peer?.games?.values() || []),
+  ]
     .filter(
       (f) => (!f.finished && !f.ownerOffline) || f.kind === "exhibitworld",
     )
@@ -246,6 +249,8 @@ function screenTabs() {
     .join("")}</div>`;
 }
 function render() {
+  if (!store || (!store.authViewer && !state.screenOnly))
+    updateProjectorAudio(null);
   if (!store) {
     app.innerHTML = onboarding(roomId);
     return;
@@ -352,6 +357,8 @@ function showStatus(text) {
     );
 }
 async function enter(room, name, avatar = "🌷", creator = false, options = {}) {
+  updateProjectorAudio(null);
+  state.screenPinned = false;
   party.reset();
   state.invites = {};
   state.partyFrame = null;
@@ -1331,7 +1338,17 @@ async function action(a, el) {
       party.endEmpty(id);
       render();
       break;
+    case "screen-auto":
+      state.screenPinned = false;
+      state.screenFrame = selectGameScreen(
+        state.screenFrame,
+        peer?.games?.values() || [],
+      );
+      state.screenKind = state.screenFrame?.kind;
+      render();
+      break;
     case "screen-game":
+      state.screenPinned = true;
       state.screenKind = id;
       state.screenFrame = peer?.games?.get(id);
       render();
@@ -1339,7 +1356,12 @@ async function action(a, el) {
     case "screen-mode":
       closeSheet();
       state.screenOnly = true;
-      state.screenFrame = peer?.lastGame;
+      state.screenPinned = false;
+      state.screenFrame = selectGameScreen(
+        null,
+        peer?.games?.values() || [],
+        peer?.lastGame,
+      );
       render();
       break;
     case "client-mode":
@@ -1874,41 +1896,15 @@ window.vmesteBeforeUpdate = async () => {
 
 window.addEventListener("vmeste-game-view", (e) => {
   const incoming = e.detail;
-  if (incoming.kind === "exhibitworld") {
-    state.screenKind = "exhibitworld";
-    state.screenFrame = incoming;
-  } else if (
-    state.screenKind === "exhibitworld" &&
-    ["lobby", "running"].includes(incoming.stage) &&
-    !incoming.finished
-  ) {
-    state.screenKind = incoming.kind;
-    state.screenFrame = incoming;
-  } else {
-    const candidates = [...(peer?.games?.values() || []), incoming]
-      .filter(
-        (f) =>
-          !f.finished &&
-          !f.ownerOffline &&
-          ["lobby", "running"].includes(f.stage),
-      )
-      .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-    const newest = candidates[0];
-    if (
-      newest &&
-      (!state.screenFrame ||
-        state.screenFrame.finished ||
-        state.screenFrame.ownerOffline ||
-        newest.createdAt > (state.screenFrame.createdAt || 0))
-    ) {
-      state.screenKind = newest.kind;
-      state.screenFrame = newest;
-    } else if (incoming.round === state.screenFrame?.round) {
-      state.screenFrame = incoming;
-    } else if (state.screenKind) {
-      state.screenFrame = peer?.games?.get(state.screenKind) || incoming;
-    } else state.screenFrame = incoming;
-  }
+  const previous = state.screenFrame;
+  state.screenFrame = selectGameScreen(
+    previous,
+    peer?.games?.values() || [],
+    incoming,
+    !!state.screenPinned,
+  );
+  if (state.screenFrame?.round !== previous?.round) state.screenPinned = false;
+  state.screenKind = state.screenFrame?.kind;
   if (store?.authViewer || state.screenOnly) {
     updateProjectorAudio(state.screenFrame);
     const live = document.querySelector(".projector-live");

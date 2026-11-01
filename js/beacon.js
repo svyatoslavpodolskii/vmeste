@@ -497,7 +497,35 @@ export function beaconCommand(s, sender, input, now = Date.now()) {
 }
 
 export function beaconPublic(s) {
+  const q = s.machine;
+  const display =
+    s.module.id === "prism"
+      ? { order: q.order, angle: q.angle }
+      : s.module.id === "power"
+        ? {
+            levels: q.levels,
+            light: add(q.levels.map((v, i) => v * q.coefficients[i].light)),
+            heat: add(q.levels.map((v, i) => v * q.coefficients[i].heat)),
+          }
+        : s.module.id === "coolant"
+          ? {
+              materials: q.materials,
+              path: q.path,
+              cooler: q.cooler,
+              exit: q.exit,
+            }
+          : s.module.id === "signal"
+            ? { observed: q.observed, signal: q.signal }
+            : s.module.id === "pendulum"
+              ? {
+                  gears: q.gears,
+                  direction: q.direction,
+                  clockStart: q.clockStart,
+                  period: q.period / q.gears[1],
+                }
+              : { routes: q.routes, route: q.route, bearing: q.bearing };
   return {
+    display,
     rulesVersion: BEACON_RULES,
     phase: s.phase,
     module: s.module,

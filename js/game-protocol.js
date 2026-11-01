@@ -1,5 +1,30 @@
 // Everyone chooses the same lobby; a started table wins against a duplicate invitation.
 export const GAME_PROTOCOL = 2;
+export function selectGameScreen(current, frames, incoming, pinned = false) {
+  const all = [...frames];
+  if (incoming) {
+    const index = all.findIndex((f) => f.kind === incoming.kind);
+    if (index >= 0) all[index] = incoming;
+    else all.push(incoming);
+    if (incoming.kind === "exhibitworld") return incoming;
+  }
+  const available = (f) =>
+    f && !f.ownerOffline && (!f.finished || f.stage === "persistent");
+  const updated = all.find((f) => f.round === current?.round);
+  if (pinned && available(updated)) return updated;
+  const live = all
+    .filter((f) => available(f) && ["running", "lobby"].includes(f.stage))
+    .sort(
+      (a, b) =>
+        Number(b.stage === "running") - Number(a.stage === "running") ||
+        (b.startedAt || b.createdAt || 0) - (a.startedAt || a.createdAt || 0) ||
+        String(b.round).localeCompare(String(a.round)),
+    );
+  if (live.length) return live[0];
+  if (available(updated) && updated.stage === "persistent") return updated;
+  if (incoming?.stage === "persistent") return incoming;
+  return updated || incoming || current;
+}
 export function updateGamePresence(state, member, active, now = Date.now()) {
   state.away = (state.away || []).filter((id) => id !== member);
   if (!active) {

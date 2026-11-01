@@ -8,7 +8,7 @@ try {
     const { NatureSound, seamlessLoop } = await import("./js/sound.js");
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     const sound = new NatureSound("audio-regression-one");
-    await sound.start();
+    await Promise.all([sound.start(), sound.start(), sound.start()]);
     const layers = Array(8).fill(0);
     layers[6] = 1;
     sound.apply(
@@ -131,6 +131,18 @@ try {
     const boundedStarVoices = sound.starVoices.size;
     const sameStarVoice = sound.starVoices.get("me:2") === starNode;
     sound.destroy();
+    const initializing = new NatureSound("cancel-during-startup");
+    await Promise.all([initializing.start(), initializing.stop()]);
+    const cancelledStartup = initializing.context.state;
+    initializing.destroy();
+    const raced = new NatureSound("play-stop-play-during-build");
+    const firstStart = raced.start(),
+      immediateStop = raced.stop(),
+      finalStart = raced.start();
+    await Promise.all([firstStart, immediateStop, finalStart]);
+    const latestIntent = raced.context.state;
+    raced.destroy();
+
     // Boundary follows the original tail's adjacent samples, rather than jumping
     // back to the beginning of an unrelated random buffer.
     const raw = Float32Array.from({ length: 100 }, (_, i) =>
@@ -138,6 +150,8 @@ try {
     );
     const loop = seamlessLoop(raw, 20);
     return {
+      latestIntent,
+      cancelledStartup,
       lowCutoff,
       highCutoff,
       quietLayer,
@@ -173,6 +187,8 @@ try {
   assert.equal(result.stopped, "suspended");
   assert.equal(result.fastRestart, "running");
   assert.equal(result.contextReused, true);
+  assert.equal(result.cancelledStartup, "suspended");
+  assert.equal(result.latestIntent, "running");
   assert.ok(result.starGain > 0.00005, JSON.stringify(result));
   assert.ok(result.heldGain > 0.00005, JSON.stringify(result));
   assert.ok(result.starQ > 2.3, JSON.stringify(result));

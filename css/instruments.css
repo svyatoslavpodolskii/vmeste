@@ -1006,3 +1006,96 @@
 #party-live .party-soundgarden .party-progress {
   display: none;
 }
+.poetry-palette fieldset {
+  border: 0;
+  padding: 0;
+  margin: 22px 0;
+  min-width: 0;
+}
+.poetry-palette legend {
+  font-size: 16px;
+  font-weight: 750;
+  margin-bottom: 12px;
+}
+.poetry-words {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+.poetry-words label {
+  position: relative;
+  margin: 0;
+  cursor: pointer;
+}
+.poetry-words input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+}
+.poetry-words span {
+  min-height: 58px;
+  display: grid;
+  place-items: center;
+  padding: 10px;
+  text-align: center;
+  background: #faf4fc;
+  border: 1px solid #e2d5e8;
+  border-radius: 16px;
+  font-size: 13px;
+  line-height: 1.4;
+  transition:
+    background 0.2s,
+    border-color 0.2s;
+}
+.poetry-words input:checked + span {
+  background: #e6d5ed;
+  border-color: #aa7db8;
+  box-shadow: 0 3px 15px #a082b224;
+}
+.poetry-words input:focus-visible + span {
+  outline: 2px solid #8d64a1;
+  outline-offset: 2px;
+}
+.poem-sealed {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 14px;
+  margin: 22px 0;
+}
+.poem-envelope {
+  padding: 18px 14px;
+  min-width: 105px;
+  max-width: 180px;
+  flex: 1;
+  border: 1px solid #deccdf;
+  border-radius: 22px;
+  background: linear-gradient(135deg, #f9f1f5, #eee7f5);
+  text-align: center;
+  transition:
+    background 0.3s,
+    box-shadow 0.3s;
+}
+.poem-envelope span,
+.poem-envelope strong,
+.poem-envelope small {
+  display: block;
+  margin: 5px 0;
+}
+.poem-envelope span .icon {
+  width: 28px;
+  height: 28px;
+  color: #9d83ad;
+}
+.poem-envelope small {
+  font-size: 11px;
+  color: #8c7b94;
+}
+.poem-envelope.ready {
+  border-color: #a4bfa9;
+  background: linear-gradient(135deg, #eef3e7, #e5eee6);
+  box-shadow: 0 0 20px #a7c4a522;
+}
+.poem-envelope.ready span .icon {
+  color: #799b7c;
+}
