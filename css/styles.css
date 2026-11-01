@@ -3787,3 +3787,8 @@ summary {
     display: none;
   }
 }
+.classification-hint {
+  grid-column: 1 / -1;
+  margin: 0 0 8px;
+  line-height: 1.5;
+}

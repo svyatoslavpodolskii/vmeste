@@ -1,6 +1,6 @@
 {
   "name": "vmeste",
-  "version": "4.4.0",
+  "version": "4.4.1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -22,7 +22,8 @@
     "test:sessions": "node tests/sessions-live.mjs",
     "test:beacon": "node tests/beacon-live.mjs",
     "test:compat": "node tests/compatibility-live.mjs",
-    "test:repairs": "node tests/boot-live.mjs && node tests/repairs-live.mjs"
+    "test:repairs": "node tests/boot-live.mjs && node tests/repairs-live.mjs",
+    "test:classification": "node tests/classification-live.mjs"
   },
   "devDependencies": {
     "fake-indexeddb": "6.2.4",
